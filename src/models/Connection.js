@@ -16,6 +16,7 @@ const connectionSchema = new mongoose.Schema(
         "TELEGRAM",
         "YOUTUBE",
         "FACEBOOK",
+       "GOOGLE_DRIVE",   
       ],
       required: true,
       index: true,

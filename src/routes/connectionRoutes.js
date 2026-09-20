@@ -5,6 +5,8 @@ const {
   getConnectionById,
   startInstagramOAuth,
   instagramOAuthCallback,
+    startGoogleDriveOAuth,
+  googleDriveOAuthCallback,
   disconnectConnection,
 } = require("../controllers/connectionController.js");
 
@@ -65,6 +67,32 @@ router.get(
   getConnections
 );
 
+/*
+|--------------------------------------------------------------------------
+| Google Drive OAuth
+|--------------------------------------------------------------------------
+*/
+
+/*
+ * Start Google Drive OAuth
+ *
+ * GET /api/connections/google-drive/start
+ */
+router.get(
+  "/google-drive/start",
+  authMiddleware,
+  startGoogleDriveOAuth
+);
+
+/*
+ * Google Drive OAuth callback
+ *
+ * No auth middleware because Google redirects here.
+ */
+router.get(
+  "/google-drive/callback",
+  googleDriveOAuthCallback
+);
 /*
  * Get one connection
  *
