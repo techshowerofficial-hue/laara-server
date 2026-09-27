@@ -2,9 +2,11 @@ const triggerNode = require("../nodes/triggerNode");
 const promptGeneratorNode = require("../nodes/promptGeneratorNode");
 const imageGeneratorNode = require("../nodes/imageGeneratorNode");
 const captionHashtagNode = require("../nodes/captionHashtagNode");
-const cloudinaryNode = require("../nodes/cloudinaryNode");
+const googleDriveOutputNode =
+  require("../nodes/googleDriveOutputNode");
 const instagramNode = require("../nodes/instagramNode");
-
+const characterReferenceNode =
+  require("../nodes/characterReferenceNode");
 /**
  * ============================================================
  * LAARA — IMAGE REEL EMPLOYEE
@@ -169,7 +171,28 @@ const runImageEmployee = async ({
   );
 
   /* ============================================================
-     STEP 3 — IMAGE GENERATOR
+   STEP 3 — CHARACTER REFERENCE
+============================================================ */
+
+console.log("\n");
+console.log("3️⃣ CHARACTER REFERENCE");
+console.log("--------------------------------");
+
+currentInput =
+  await characterReferenceNode.execute({
+    input: currentInput,
+    node: {
+      type: "characterReference",
+      config: {},
+    },
+    context,
+  });
+
+console.log(
+  "✅ Character reference processed"
+);
+  /* ============================================================
+     STEP 4 — IMAGE GENERATOR
   ============================================================ */
 
   console.log("\n");
@@ -186,7 +209,7 @@ const runImageEmployee = async ({
         config: {
           size:
             process.env.OPENAI_IMAGE_SIZE ||
-            "1024x1024",
+            "1024x1792",
 
           quality:
             process.env.OPENAI_IMAGE_QUALITY ||
@@ -214,7 +237,7 @@ const runImageEmployee = async ({
   );
 
   /* ============================================================
-     STEP 4 — CAPTION + HASHTAGS
+     STEP 5 — CAPTION + HASHTAGS
   ============================================================ */
 
   console.log("\n");
@@ -254,76 +277,35 @@ const runImageEmployee = async ({
   : currentInput.hashtags || "Hashtags not found"
   );
 
-  /* ============================================================
-     STEP 5 — CLOUDINARY
-  ============================================================ */
 
-  console.log("\n");
-  console.log("5️⃣ CLOUDINARY");
-  console.log("--------------------------------");
+/* ============================================================
+   STEP 6 — GOOGLE DRIVE OUTPUT
+============================================================ */
 
-  currentInput =
-    await cloudinaryNode.execute({
-      input: currentInput,
+console.log("\n");
+console.log("5️⃣ GOOGLE DRIVE OUTPUT");
+console.log("--------------------------------");
 
-      node: {
-        type: "cloudinary",
+currentInput =
+  await googleDriveOutputNode.execute({
+    input: currentInput,
 
-        config: {
-          folder:
-            process.env
-              .CLOUDINARY_GENERATED_FOLDER ||
-            "laara/generated",
-        },
-      },
+    node: {
+      type: "googleDriveOutput",
 
-      context,
-    });
-const normalizeHashtags = (hashtags) => {
-  if (Array.isArray(hashtags)) {
-    return hashtags;
-  }
+      config: {},
+    },
 
-  if (typeof hashtags === "string") {
-    return hashtags
-      .split(/\s+/)
-      .map((tag) => tag.trim())
-      .filter(Boolean)
-      .map((tag) =>
-        tag.startsWith("#") ? tag : `#${tag}`
-      );
-  }
+    context,
+  });
 
-  return [];
-};
+console.log(
+  "✅ Image saved to Google Drive"
+);
 
-currentInput.hashtags =
-  normalizeHashtags(currentInput.hashtags);
-  console.log("✅ Cloudinary upload completed");
-
-  /*
-   * Different versions of cloudinaryNode may return
-   * different property names.
-   */
-
-  const imageUrl =
-    currentInput.imageUrl ||
-    currentInput.cloudinaryUrl ||
-    currentInput.secureUrl ||
-    currentInput.url ||
-    currentInput.cloudinary?.secure_url ||
-    currentInput.cloudinary?.url;
-
-  console.log("\n☁️ CLOUDINARY IMAGE URL:");
-  console.log("--------------------------------");
-
-  console.log(
-    imageUrl ||
-      "Image URL not returned"
-  );
 
   /* ============================================================
-     STEP 6 — INSTAGRAM
+     STEP 7 — INSTAGRAM
   ============================================================ */
 
   console.log("\n");
@@ -333,26 +315,29 @@ currentInput.hashtags =
   /*
    * Instagram needs a PUBLIC HTTPS image URL.
    */
+/*
+ * Instagram needs a PUBLIC HTTPS image URL.
+ *
+ * Google Drive Output node already returns webViewLink.
+ */
 
-  if (!imageUrl) {
-    throw new Error(
-      "Image Employee: Cloudinary did not return a public image URL"
-    );
-  }
+const imageUrl =
+  currentInput.googleDrive?.publicUrl;
 
-  /*
-   * Put the URL back into the input so Instagram node
-   * can consume it regardless of which property it expects.
-   */
+if (!imageUrl) {
+  throw new Error(
+    "Image Employee: Google Drive did not return a public image URL"
+  );
+}
 
-  currentInput.imageUrl =
-    imageUrl;
+console.log("\n🌐 PUBLIC IMAGE URL:");
+console.log(imageUrl);
 
-  currentInput.cloudinaryUrl =
-    imageUrl;
+currentInput.imageUrl =
+  imageUrl;
 
-  currentInput.url =
-    imageUrl;
+currentInput.url =
+  imageUrl;
 
   currentInput =
     await instagramNode.execute({

@@ -1,42 +1,80 @@
-  const express = require("express");
+const express = require("express");
 
-  const upload = require("../middleware/upload");
+const authMiddleware = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 
-  const {
-    createCharacter,
-    getCharacters,
-    getCharacterById,
-    updateCharacter,
-    deleteCharacter
-  } = require("../controllers/characterController");
+const {
+  createCharacter,
+  getCharacters,
+  getCharacterById,
+  updateCharacter,
+  deleteCharacter,
+  getCharacterReferenceImage,
+} = require("../controllers/characterController");
 
-  const router = express.Router();
+const router = express.Router();
 
-  router.post(
-    "/",
-    upload.single("referenceImage"),
-    createCharacter
-  );
+// ============================================================
+// AUTH
+// ============================================================
 
-  router.get(
-    "/",
-    getCharacters
-  );
+router.use(authMiddleware);
 
-  router.get(
-    "/:id",
-    getCharacterById
-  );
+// ============================================================
+// CREATE CHARACTER
+// ============================================================
 
-  router.put(
-    "/:id",
-    upload.single("referenceImage"),
-    updateCharacter
-  );
+router.post(
+  "/",
+  upload.single("referenceImage"),
+  createCharacter
+);
 
-  router.delete(
-    "/:id",
-    deleteCharacter
-  );
+// ============================================================
+// GET ALL CHARACTERS
+// ============================================================
 
-  module.exports = router;
+router.get(
+  "/",
+  getCharacters
+);
+
+// ============================================================
+// GET CHARACTER REFERENCE IMAGE
+// IMPORTANT: before /:id
+// ============================================================
+
+router.get(
+  "/:id/reference-image",
+  getCharacterReferenceImage
+);
+
+// ============================================================
+// GET CHARACTER BY ID
+// ============================================================
+
+router.get(
+  "/:id",
+  getCharacterById
+);
+
+// ============================================================
+// UPDATE CHARACTER
+// ============================================================
+
+router.put(
+  "/:id",
+  upload.single("referenceImage"),
+  updateCharacter
+);
+
+// ============================================================
+// DELETE CHARACTER
+// ============================================================
+
+router.delete(
+  "/:id",
+  deleteCharacter
+);
+
+module.exports = router;

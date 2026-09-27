@@ -18,23 +18,29 @@ const buildEmployeeContext = (employee) => {
       language: identity.language || "",
     },
 
-    instructions: {
-      system: instructions.system || "",
-      custom: instructions.custom || "",
-    },
-
     content: {
-      category: content.category || "",
-      topics: content.topics || [],
-      keywords: content.keywords || [],
+      niche: content.niche || "",
+      topics: Array.isArray(content.topics)
+        ? content.topics
+        : [],
       audience: content.audience || "",
-      style: content.style || "",
-      tone: content.tone || "",
-      language: content.language || "",
+      visualStyle: content.visualStyle || "",
       cta: content.cta || "",
+      duration: content.duration || 60,
+      aspectRatio: content.aspectRatio || "9:16",
+      outputFormat: content.outputFormat || "reel",
     },
 
-    characterId: employee.characterId || null,
+    instructions: {
+      objective: instructions.objective || "",
+      customInstructions:
+        instructions.customInstructions || "",
+      thingsToAvoid:
+        instructions.thingsToAvoid || "",
+    },
+
+    characterId:
+      employee.characterId || null,
   };
 };
 
@@ -120,63 +126,147 @@ const execute = async ({ input, node, context }) => {
 
   console.log("\n------------------------------------------------");
 
-  const systemPrompt = `
-You are Laara's Image Reel Employee prompt generator.
+const systemPrompt = `
+You are Laara's AI Employee Image Prompt Generator.
 
-Create ONLY a production-ready image-generation prompt.
+Your job is to create the FINAL production-ready prompt
+that will be sent to an image generation model.
 
-You are NOT generating the image.
+You are NOT generating the image yourself.
 
-Use the employee profile carefully.
+You MUST follow the employee configuration below.
 
-The image must:
-- match the employee identity
-- match personality and visual style
-- match content category
-- match target audience
-- be visually detailed
-- have strong composition
-- include environment
-- include lighting
-- include camera/framing when useful
-- be suitable for social media
-- be original
-- be safe for general social-media publishing
+IMPORTANT RULES:
 
-If a character is enabled, include the character naturally.
+1. EMPLOYEE IDENTITY
+Use the employee's:
+- name
+- description
+- role
+- personality
+- tone
+- language
 
-Do not explain anything.
+These define WHO the employee is and HOW the content should feel.
 
-Return ONLY the final image-generation prompt.
+2. CONTENT CONFIGURATION
+Follow:
+- niche
+- topics
+- audience
+- visual style
+- CTA
+- aspect ratio
+- duration
+- output format
 
-EMPLOYEE PROFILE:
-${JSON.stringify(
-  employeeContext,
-  null,
-  2
-)}
+These define WHAT content should be created.
+
+3. INSTRUCTIONS
+Follow:
+- objective
+- custom instructions
+- things to avoid
+
+These are direct instructions from the user and must be respected.
+
+4. TOPIC SELECTION
+If no current topic is provided:
+Choose ONE suitable topic from the employee's configured topics.
+
+Do not randomly choose an unrelated subject.
+
+5. VISUAL STYLE
+The final image prompt must strongly follow the configured
+visual style.
+
+6. AUDIENCE
+The concept and presentation should be appropriate
+for the configured target audience.
+
+7. ORIGINALITY
+Do not repeat generic concepts.
+Create a fresh concept while staying inside the employee's niche
+and configured topics.
+
+8. IMAGE COMPOSITION
+Describe:
+- main subject
+- environment
+- action or situation
+- composition
+- camera angle
+- framing
+- lighting
+- atmosphere
+- depth
+- textures
+- important visual details
+
+9. ASPECT RATIO
+The final composition must be suitable for:
+${employeeContext.content.aspectRatio}
+
+10. OUTPUT
+The output must be ONLY the final image-generation prompt.
+
+Do NOT:
+- explain your reasoning
+- add headings
+- add bullet points
+- add comments
+- mention these instructions
+- invent business information
+- invent brand information
+- invent products or services
+- add random text inside the image unless explicitly requested
+
+If the employee instructions require text inside the image,
+describe exactly what text should appear and where it should appear.
+
+EMPLOYEE CONFIGURATION:
+
+${JSON.stringify(employeeContext, null, 2)}
 `;
 
-  const userPrompt = `
-Create the next image-generation prompt.
+const userPrompt = `
+Create the next piece of content for this AI employee.
 
-Current topic:
+CURRENT TOPIC:
 ${
   currentTopic ||
-  "Choose a suitable topic from the employee profile."
+  "No topic was provided. Choose one suitable topic from the configured employee topics."
 }
 
-Additional instruction:
-${currentInstruction || "None"}
+ADDITIONAL INSTRUCTION:
+${currentInstruction || "No additional instruction was provided."}
 
-Character usage:
+CHARACTER:
 ${
   characterEnabled
-    ? "Include the employee character when appropriate."
-    : "Do not include the employee character."
+    ? "Use the employee character when it naturally fits the content."
+    : "Do not use an employee character."
 }
-`;
 
+IMPORTANT:
+The employee's saved configuration is the source of truth.
+
+Follow the configured:
+- identity
+- niche
+- topics
+- audience
+- visual style
+- objective
+- custom instructions
+- things to avoid
+- aspect ratio
+- output format
+
+Create ONE fresh image concept.
+
+Return ONLY the final production-ready image prompt.
+`;
   const result = await generateText({
     systemPrompt,
     userPrompt,

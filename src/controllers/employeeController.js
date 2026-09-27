@@ -1,11 +1,17 @@
 const mongoose = require("mongoose");
-
+const User = require("../models/User");
+const {isTestAccount} = require("../utils/testAccount");
 const Employee = require("../models/Employee");
 const Account = require("../models/Account");
 const AgentTemplate = require("../models/AgentTemplate");
 const EmployeeTrialUsage = require("../models/EmployeeTrialUsage");
 const Connection = require("../models/Connection.js");
 
+const {
+  createEmployeeStorage,
+    moveCharacterReferenceToEmployee,
+    renameEmployeeStorageFolder
+} = require("../services/googleDriveService");
 const EMPLOYEE_TRIAL_DAYS = 2;
 const EMPLOYEE_TRIAL_MAX_OUTPUTS = 3;
 
@@ -214,9 +220,7 @@ const normalizeScheduleExceptions = (
   }));
 };
 
-const validateSchedule = (
-  schedule
-) => {
+const validateSchedule = (schedule) => {
   if (
     !schedule ||
     typeof schedule !== "object" ||
@@ -228,21 +232,65 @@ const validateSchedule = (
     };
   }
 
+  // ============================================================
+  // TRIGGER MODE
+  // ============================================================
+
   const triggerMode =
-    schedule.triggerMode ||
-    "MANUAL";
+    schedule.triggerMode || "MANUAL";
 
   if (
-    !["MANUAL", "AUTOMATIC"].includes(
-      triggerMode
-    )
+    !["MANUAL", "AUTOMATIC"].includes(triggerMode)
   ) {
     return {
       valid: false,
-      message:
-        "Invalid schedule trigger mode",
+      message: "Invalid schedule trigger mode",
     };
   }
+
+  // ============================================================
+  // START DATE
+  // ============================================================
+
+  const startDate = schedule.startDate
+    ? new Date(schedule.startDate)
+    : new Date();
+
+  if (Number.isNaN(startDate.getTime())) {
+    return {
+      valid: false,
+      message: "Invalid schedule start date.",
+    };
+  }
+
+  // ============================================================
+  // END DATE
+  // ============================================================
+
+  let endDate = null;
+
+  if (schedule.endDate) {
+    endDate = new Date(schedule.endDate);
+
+    if (Number.isNaN(endDate.getTime())) {
+      return {
+        valid: false,
+        message: "Invalid schedule end date.",
+      };
+    }
+
+    if (endDate < startDate) {
+      return {
+        valid: false,
+        message:
+          "Schedule end date cannot be before start date.",
+      };
+    }
+  }
+
+  // ============================================================
+  // WEEKLY
+  // ============================================================
 
   const weekly =
     schedule.weekly || {};
@@ -252,9 +300,11 @@ const validateSchedule = (
       weekly.workingDays || []
     );
 
-  if (
-    triggerMode === "AUTOMATIC"
-  ) {
+  // ============================================================
+  // AUTOMATIC VALIDATION
+  // ============================================================
+
+  if (triggerMode === "AUTOMATIC") {
     if (!workingDays.length) {
       return {
         valid: false,
@@ -272,6 +322,10 @@ const validateSchedule = (
     }
   }
 
+  // ============================================================
+  // TIME VALIDATION
+  // ============================================================
+
   if (
     weekly.time !== undefined &&
     !isValidTime(weekly.time)
@@ -283,10 +337,13 @@ const validateSchedule = (
     };
   }
 
+  // ============================================================
+  // TIMEZONE VALIDATION
+  // ============================================================
+
   if (
     weekly.timezone !== undefined &&
-    typeof weekly.timezone !==
-      "string"
+    typeof weekly.timezone !== "string"
   ) {
     return {
       valid: false,
@@ -295,12 +352,13 @@ const validateSchedule = (
     };
   }
 
+  // ============================================================
+  // EXCEPTIONS
+  // ============================================================
+
   if (
-    schedule.exceptions !==
-      undefined &&
-    !Array.isArray(
-      schedule.exceptions
-    )
+    schedule.exceptions !== undefined &&
+    !Array.isArray(schedule.exceptions)
   ) {
     return {
       valid: false,
@@ -349,10 +407,8 @@ const validateSchedule = (
     }
 
     if (
-      exception.reason !==
-        undefined &&
-      typeof exception.reason !==
-        "string"
+      exception.reason !== undefined &&
+      typeof exception.reason !== "string"
     ) {
       return {
         valid: false,
@@ -362,18 +418,25 @@ const validateSchedule = (
     }
   }
 
+  // ============================================================
+  // FINAL NORMALIZED SCHEDULE
+  // ============================================================
+
   return {
     valid: true,
 
     schedule: {
       triggerMode,
 
+      startDate,
+
+      endDate,
+
       weekly: {
         workingDays,
 
         time:
-          weekly.time ||
-          "10:00",
+          weekly.time || "10:00",
 
         timezone:
           weekly.timezone ||
@@ -387,10 +450,7 @@ const validateSchedule = (
     },
   };
 };
-
-const buildInitialSchedule = ({
-  body,
-}) => {
+const buildInitialSchedule = ({ body }) => {
   const workload =
     body.workload || {};
 
@@ -399,6 +459,10 @@ const buildInitialSchedule = ({
 
   const requestedWeekly =
     requestedSchedule.weekly || {};
+
+  // ============================================================
+  // WORKING DAYS
+  // ============================================================
 
   let scheduleDays =
     requestedWeekly.workingDays;
@@ -410,10 +474,89 @@ const buildInitialSchedule = ({
       workload.workingDays;
   }
 
+  // ============================================================
+  // START DATE
+  // ============================================================
+
+  const startDate =
+    requestedSchedule.startDate
+      ? new Date(
+          requestedSchedule.startDate
+        )
+      : new Date();
+
+  if (
+    Number.isNaN(
+      startDate.getTime()
+    )
+  ) {
+    throw new Error(
+      "Invalid schedule start date."
+    );
+  }
+
+  // ============================================================
+  // END DATE
+  // ============================================================
+
+  let endDate = null;
+
+  if (
+    requestedSchedule.endDate
+  ) {
+    endDate =
+      new Date(
+        requestedSchedule.endDate
+      );
+
+    if (
+      Number.isNaN(
+        endDate.getTime()
+      )
+    ) {
+      throw new Error(
+        "Invalid schedule end date."
+      );
+    }
+
+    if (
+      endDate < startDate
+    ) {
+      throw new Error(
+        "Schedule end date cannot be before start date."
+      );
+    }
+  } else {
+    // ----------------------------------------------------------
+    // DEFAULT = 1 MONTH
+    // Example:
+    // 20 Feb -> 19 Mar
+    // ----------------------------------------------------------
+
+    endDate =
+      new Date(startDate);
+
+    endDate.setMonth(
+      endDate.getMonth() + 1
+    );
+
+    endDate.setDate(
+      endDate.getDate() - 1
+    );
+  }
+
+  // ============================================================
+  // BUILD SCHEDULE
+  // ============================================================
+
   const schedule = {
     triggerMode:
       requestedSchedule.triggerMode ||
       "MANUAL",
+
+    startDate,
+
+    endDate,
 
     weekly: {
       workingDays:
@@ -437,8 +580,14 @@ const buildInitialSchedule = ({
       [],
   };
 
+  // ============================================================
+  // VALIDATE
+  // ============================================================
+
   const validation =
-    validateSchedule(schedule);
+    validateSchedule(
+      schedule
+    );
 
   if (!validation.valid) {
     throw new Error(
@@ -540,19 +689,39 @@ const configureEmployeeWorkflow = ({
       ? workflow.nodes
       : [];
 
+  // ============================================================
+  // CONFIGURE NODES
+  // ============================================================
+
   for (const node of nodes) {
-    /* ========================================================
-       TRIGGER NODE
-    ======================================================== */
+
+    // ==========================================================
+    // TRIGGER NODE
+    // ==========================================================
 
     if (isTriggerNode(node)) {
       node.config =
         node.config || {};
 
+      // --------------------------------------------------------
+      // Trigger mode
+      // --------------------------------------------------------
+
       node.config.triggerMode =
         schedule.triggerMode;
 
+      // --------------------------------------------------------
+      // Complete schedule configuration
+      // --------------------------------------------------------
+
       node.config.schedule = {
+
+        startDate:
+          schedule.startDate,
+
+        endDate:
+          schedule.endDate,
+
         weekly: {
           workingDays:
             schedule.weekly
@@ -562,26 +731,28 @@ const configureEmployeeWorkflow = ({
             schedule.weekly.time,
 
           timezone:
-            schedule.weekly.timezone,
+            schedule.weekly
+              .timezone,
         },
 
         exceptions:
           schedule.exceptions || [],
       };
 
-      /**
-       * Mark configuration as
-       * user configurable.
-       */
+      // --------------------------------------------------------
+      // User configurable
+      // --------------------------------------------------------
+
       node.config.userConfigurable =
         true;
     }
 
-    /* ========================================================
-       INSTAGRAM NODE
-    ======================================================== */
+    // ==========================================================
+    // INSTAGRAM NODE
+    // ==========================================================
 
     if (isInstagramNode(node)) {
+
       node.config =
         node.config || {};
 
@@ -597,9 +768,9 @@ const configureEmployeeWorkflow = ({
         true;
     }
 
-    /* ========================================================
-       INTERNAL NODES
-    ======================================================== */
+    // ==========================================================
+    // INTERNAL NODES
+    // ==========================================================
 
     if (
       !isTriggerNode(node) &&
@@ -616,12 +787,17 @@ const configureEmployeeWorkflow = ({
     }
   }
 
+  // ============================================================
+  // RETURN
+  // ============================================================
+
   return {
     nodes,
-    edges: workflow.edges || [],
+
+    edges:
+      workflow.edges || [],
   };
 };
-
 /* ============================================================
    CHARACTER VALIDATION
 ============================================================ */
@@ -1009,12 +1185,16 @@ const hireEmployee = async (
     const userId =
       req.user?.userId;
 
+
     if (!userId) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized",
       });
     }
+
+      const testAccount =
+  await isTestAccount(userId);
 
     const {
       type,
@@ -1068,10 +1248,13 @@ const hireEmployee = async (
            ACCOUNT STATUS
         ==================================================== */
 
-        if (
-          account.status !== "TRIAL" &&
-          account.status !== "ACTIVE"
-        ) {
+ if (
+  !testAccount &&
+  account.status === "TRIAL" &&
+  account.trial?.isActive &&
+  account.trial?.endDate &&
+  new Date(account.trial.endDate) <= new Date()
+) {
           throw new Error(
             "ACCOUNT_NOT_ACTIVE"
           );
@@ -1080,30 +1263,24 @@ const hireEmployee = async (
         /* ====================================================
            ACCOUNT TRIAL
         ==================================================== */
+if (
+  !testAccount &&
+  account.status === "TRIAL" &&
+  account.trial?.isActive &&
+  account.trial?.endDate &&
+  new Date(account.trial.endDate) <= new Date()
+) {
+  account.status = "EXPIRED";
+  account.trial.isActive = false;
 
-        if (
-          account.status ===
-            "TRIAL" &&
-          account.trial?.isActive &&
-          account.trial?.endDate &&
-          new Date(
-            account.trial.endDate
-          ) <= new Date()
-        ) {
-          account.status =
-            "EXPIRED";
+  await account.save({
+    session,
+  });
 
-          account.trial.isActive =
-            false;
-
-          await account.save({
-            session,
-          });
-
-          throw new Error(
-            "ACCOUNT_TRIAL_EXPIRED"
-          );
-        }
+  throw new Error(
+    "ACCOUNT_TRIAL_EXPIRED"
+  );
+}
 
         /* ====================================================
            TEMPLATE
@@ -1155,11 +1332,13 @@ const hireEmployee = async (
         /* ====================================================
            EMPLOYEE LIMIT
         ==================================================== */
-
-      const isUnlimitedAccount =
+const isUnlimitedAccount =
   account.limits?.unlimited === true;
 
-if (!isUnlimitedAccount) {
+if (
+  !isUnlimitedAccount &&
+  !testAccount
+) {
   const activeEmployeeCount =
     await Employee.countDocuments({
       userId,
@@ -1191,21 +1370,21 @@ if (!isUnlimitedAccount) {
            TRIAL CHECK
         ==================================================== */
 
-        const existingTrial =
-          await EmployeeTrialUsage.findOne(
-            {
-              userId,
+const existingTrial =
+  await EmployeeTrialUsage.findOne({
+    userId,
+    agentTemplateId:
+      agentTemplate._id,
+  }).session(session);
 
-              agentTemplateId:
-                agentTemplate._id,
-            }
-          ).session(session);
-
-        if (existingTrial) {
-          throw new Error(
-            "EMPLOYEE_TRIAL_ALREADY_USED"
-          );
-        }
+if (
+  existingTrial &&
+  !testAccount
+) {
+  throw new Error(
+    "EMPLOYEE_TRIAL_ALREADY_USED"
+  );
+}
 
         /* ====================================================
            INSTAGRAM CONNECTION
@@ -1345,33 +1524,37 @@ if (!isUnlimitedAccount) {
            TRIAL DATES
         ==================================================== */
 
-        const trialStart =
-          new Date();
+const trialStart =
+  new Date();
 
-        let trialEnd =
-          addDays(
-            trialStart,
-            EMPLOYEE_TRIAL_DAYS
-          );
+let trialEnd = testAccount
+  ? addDays(
+      trialStart,
+      3650
+    )
+  : addDays(
+      trialStart,
+      EMPLOYEE_TRIAL_DAYS
+    );
 
-        if (
-          account.status ===
-            "TRIAL" &&
-          account.trial?.endDate
-        ) {
-          const accountTrialEnd =
-            new Date(
-              account.trial.endDate
-            );
+if (
+  !testAccount &&
+  account.status === "TRIAL" &&
+  account.trial?.endDate
+) {
+  const accountTrialEnd =
+    new Date(
+      account.trial.endDate
+    );
 
-          if (
-            trialEnd >
-            accountTrialEnd
-          ) {
-            trialEnd =
-              accountTrialEnd;
-          }
-        }
+  if (
+    trialEnd >
+    accountTrialEnd
+  ) {
+    trialEnd =
+      accountTrialEnd;
+  }
+}
 
         if (
           trialEnd <= trialStart
@@ -1449,46 +1632,147 @@ if (!isUnlimitedAccount) {
         /* ====================================================
            CREATE TRIAL USAGE
         ==================================================== */
+if (!testAccount) {
+  await EmployeeTrialUsage.create(
+    [
+      {
+        userId,
 
-        await EmployeeTrialUsage.create(
-          [
-            {
+        accountId:
+          account._id,
+
+        agentTemplateId:
+          agentTemplate._id,
+
+        employeeId:
+          createdEmployee._id,
+
+        status:
+          "ACTIVE",
+
+        startDate:
+          trialStart,
+
+        endDate:
+          trialEnd,
+
+        maxOutputs:
+          EMPLOYEE_TRIAL_MAX_OUTPUTS,
+
+        outputsUsed: 0,
+
+        used: true,
+
+        completedAt: null,
+      },
+    ],
+    {
+      session,
+    }
+  );
+}
+        }
+    );
+
+    // ====================================================
+    // GOOGLE DRIVE STORAGE
+    // ====================================================
+
+if (createdEmployee) {
+  try {
+    // ========================================================
+    // CREATE EMPLOYEE DRIVE STORAGE
+    // ========================================================
+
+    const storage =
+      await createEmployeeStorage({
+        userId,
+
+        employeeId:
+          createdEmployee._id,
+
+        employeeName:
+          createdEmployee.name,
+
+        employeeType:
+          createdEmployee.type,
+      });
+
+    createdEmployee.storage =
+      storage;
+
+    await createdEmployee.save();
+
+    // ========================================================
+    // CHARACTER REFERENCE
+    // ========================================================
+
+    if (
+      createdEmployee.characterId &&
+      storage?.folders?.references
+    ) {
+      const Character =
+        mongoose.models.Character;
+
+      if (Character) {
+        const character =
+          await Character.findOne({
+            _id:
+              createdEmployee.characterId,
+
+            userId,
+          });
+
+        if (
+          character &&
+          character.referenceImage
+            ?.driveFileId
+        ) {
+          const movedReference =
+            await moveCharacterReferenceToEmployee({
               userId,
 
-              accountId:
-                account._id,
+              characterFileId:
+                character.referenceImage
+                  .driveFileId,
 
-              agentTemplateId:
-                agentTemplate._id,
+              characterName:
+                character.name,
 
-              employeeId:
-                createdEmployee._id,
+              characterId:
+                character._id,
 
-              status:
-                "ACTIVE",
+              referencesFolderId:
+                storage.folders
+                  .references,
+            });
 
-              startDate:
-                trialStart,
+          // Save employee-specific
+          // Drive folder information
+          character.referenceImage
+            .driveFolderId =
+              movedReference.folderId;
 
-              endDate:
-                trialEnd,
-
-              maxOutputs:
-                EMPLOYEE_TRIAL_MAX_OUTPUTS,
-
-              outputsUsed: 0,
-
-              used: true,
-
-              completedAt: null,
-            },
-          ],
-          {
-            session,
-          }
-        );
+          await character.save();
+        }
       }
+    }
+
+  } catch (driveError) {
+    console.error(
+      "Google Drive storage setup failed:",
+      driveError
     );
+
+    createdEmployee.storage =
+      createdEmployee.storage || {};
+
+    createdEmployee.storage.status =
+      "ERROR";
+
+    await createdEmployee.save();
+  }
+}
 
     return res.status(201).json({
       success: true,
@@ -1840,239 +2124,163 @@ const getEmployeeById = async (
    GET BILLING
 ============================================================ */
 
-const getEmployeeBilling =
-  async (req, res) => {
-    try {
-      const userId =
-        req.user.userId;
+const getEmployeeBilling = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const employeeId = req.params.id;
 
-      const employeeId =
-        req.params.id;
+    const employee = await Employee.findOne({
+      _id: employeeId,
+      userId,
+    });
 
-      const employee =
-        await Employee.findOne({
-          _id: employeeId,
-
-          userId,
-        });
-
-      if (!employee) {
-        return res.status(404).json({
-          success: false,
-
-          message:
-            "Employee not found",
-        });
-      }
-
-      const trialUsage =
-        await EmployeeTrialUsage.findOne(
-          {
-            userId,
-
-            agentTemplateId:
-              employee.agentTemplateId,
-          }
-        );
-
-      const maxTrialOutputs =
-        Number(
-          trialUsage?.maxOutputs ||
-            EMPLOYEE_TRIAL_MAX_OUTPUTS
-        );
-
-      const outputsUsed =
-        Number(
-          trialUsage?.outputsUsed ||
-            0
-        );
-
-      const outputsRemaining =
-        Math.max(
-          0,
-          maxTrialOutputs -
-            outputsUsed
-        );
-
-      const now =
-        new Date();
-
-      let trialRemainingMs =
-        0;
-
-      if (
-        employee.trial?.isActive &&
-        employee.trial?.endDate
-      ) {
-        trialRemainingMs =
-          Math.max(
-            0,
-            new Date(
-              employee.trial.endDate
-            ).getTime() -
-              now.getTime()
-          );
-      }
-
-      const trialRemainingHours =
-        Math.floor(
-          trialRemainingMs /
-            (1000 * 60 * 60)
-        );
-
-      const trialRemainingDays =
-        Math.ceil(
-          trialRemainingMs /
-            (1000 *
-              60 *
-              60 *
-              24)
-        );
-
-      if (
-        employee.status ===
-          "TRIAL" &&
-        employee.trial?.endDate &&
-        new Date(
-          employee.trial.endDate
-        ) <= now
-      ) {
-        employee.status =
-          "PAYMENT_REQUIRED";
-
-        employee.trial.isActive =
-          false;
-
-        employee.billing.status =
-          "PENDING";
-
-        await employee.save();
-
-        if (
-          trialUsage &&
-          trialUsage.status ===
-            "ACTIVE"
-        ) {
-          trialUsage.status =
-            "EXPIRED";
-
-          trialUsage.completedAt =
-            now;
-
-          await trialUsage.save();
-        }
-      }
-
-      return res.json({
-        success: true,
-
-        billing: {
-          employeeId:
-            employee._id,
-
-          status:
-            employee.status,
-
-          salary:
-            employee.billing
-              ?.salary || 0,
-
-          currency:
-            employee.billing
-              ?.currency || "INR",
-
-          cycle:
-            employee.billing
-              ?.cycle || "MONTHLY",
-
-          billingStatus:
-            employee.billing
-              ?.status ||
-            "NOT_STARTED",
-
-          currentPeriodStart:
-            employee.billing
-              ?.currentPeriodStart,
-
-          currentPeriodEnd:
-            employee.billing
-              ?.currentPeriodEnd,
-
-          nextPaymentDate:
-            employee.billing
-              ?.nextPaymentDate,
-
-          lastPaymentDate:
-            employee.billing
-              ?.lastPaymentDate,
-        },
-
-        trial: {
-          isActive:
-            employee.trial
-              ?.isActive ||
-            false,
-
-          startDate:
-            employee.trial
-              ?.startDate ||
-            null,
-
-          endDate:
-            employee.trial
-              ?.endDate ||
-            null,
-
-          remainingDays:
-            trialRemainingDays,
-
-          remainingHours:
-            trialRemainingHours,
-
-          maxOutputs:
-            maxTrialOutputs,
-
-          outputsUsed,
-
-          outputsRemaining,
-        },
-
-        workload: {
-          workingDays:
-            employee.workload
-              ?.workingDays,
-
-          dailyOutput:
-            employee.workload
-              ?.dailyOutput,
-
-          monthlyWorkingDays:
-            employee.workload
-              ?.monthlyWorkingDays,
-
-          monthlyOutput:
-            employee.workload
-              ?.monthlyOutput,
-        },
-
-        schedule:
-          employee.schedule ||
-          null,
-      });
-    } catch (error) {
-      console.error(
-        "Get Employee Billing Error:",
-        error
-      );
-
-      return res.status(500).json({
+    if (!employee) {
+      return res.status(404).json({
         success: false,
-
-        message:
-          "Failed to fetch employee billing",
+        message: "Employee not found",
       });
     }
-  };
+
+    const trialUsage = await EmployeeTrialUsage.findOne({
+      userId,
+      agentTemplateId: employee.agentTemplateId,
+    });
+
+    const maxTrialOutputs = Number(
+      trialUsage?.maxOutputs || EMPLOYEE_TRIAL_MAX_OUTPUTS
+    );
+
+    const outputsUsed = Number(
+      trialUsage?.outputsUsed || 0
+    );
+
+    const outputsRemaining = Math.max(
+      0,
+      maxTrialOutputs - outputsUsed
+    );
+
+    const now = new Date();
+
+    let trialRemainingMs = 0;
+
+    if (
+      employee.trial?.isActive &&
+      employee.trial?.endDate
+    ) {
+      trialRemainingMs = Math.max(
+        0,
+        new Date(employee.trial.endDate).getTime() -
+          now.getTime()
+      );
+    }
+
+    const trialRemainingHours = Math.floor(
+      trialRemainingMs / (1000 * 60 * 60)
+    );
+
+    const trialRemainingDays = Math.ceil(
+      trialRemainingMs / (1000 * 60 * 60 * 24)
+    );
+
+    // Trial expiry
+    if (
+      employee.status === "TRIAL" &&
+      employee.trial?.endDate &&
+      new Date(employee.trial.endDate) <= now
+    ) {
+      employee.status = "PAYMENT_REQUIRED";
+
+      employee.trial.isActive = false;
+
+      employee.billing.status = "PENDING";
+
+      await employee.save();
+
+      if (
+        trialUsage &&
+        trialUsage.status === "ACTIVE"
+      ) {
+        trialUsage.status = "EXPIRED";
+        trialUsage.completedAt = now;
+
+        await trialUsage.save();
+      }
+    }
+
+    return res.json({
+      success: true,
+
+      billing: {
+        employeeId: employee._id,
+
+        status: employee.status,
+
+        salary: employee.billing?.salary || 0,
+
+        currency: employee.billing?.currency || "INR",
+
+        cycle: employee.billing?.cycle || "MONTHLY",
+
+        billingStatus:
+          employee.billing?.status || "NOT_STARTED",
+
+        currentPeriodStart:
+          employee.billing?.currentPeriodStart,
+
+        currentPeriodEnd:
+          employee.billing?.currentPeriodEnd,
+
+        nextPaymentDate:
+          employee.billing?.nextPaymentDate,
+
+        lastPaymentDate:
+          employee.billing?.lastPaymentDate,
+      },
+
+      trial: {
+        isActive: employee.trial?.isActive || false,
+
+        startDate: employee.trial?.startDate || null,
+
+        endDate: employee.trial?.endDate || null,
+
+        remainingDays: trialRemainingDays,
+
+        remainingHours: trialRemainingHours,
+
+        maxOutputs: maxTrialOutputs,
+
+        outputsUsed,
+
+        outputsRemaining,
+      },
+
+      workload: {
+        workingDays: employee.workload?.workingDays,
+
+        dailyOutput: employee.workload?.dailyOutput,
+
+        monthlyWorkingDays:
+          employee.workload?.monthlyWorkingDays,
+
+        monthlyOutput:
+          employee.workload?.monthlyOutput,
+      },
+
+      schedule: employee.schedule || null,
+    });
+  } catch (error) {
+    console.error(
+      "Get Employee Billing Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch employee billing",
+    });
+  }
+};
 
 /* ============================================================
    UPDATE EMPLOYEE
@@ -2139,25 +2347,24 @@ const updateEmployee = async (
     /* ========================================================
        BASIC
     ======================================================== */
+    let employeeNameChanged = false;
 
-    if (
-      name !== undefined
-    ) {
-      const cleanName =
-        String(name).trim();
+if (name !== undefined) {
+  const cleanName = String(name).trim();
 
-      if (!cleanName) {
-        return res.status(400).json({
-          success: false,
+  if (!cleanName) {
+    return res.status(400).json({
+      success: false,
+      message: "Employee name cannot be empty",
+    });
+  }
 
-          message:
-            "Employee name cannot be empty",
-        });
-      }
+  if (cleanName !== employee.name) {
+    employeeNameChanged = true;
+  }
 
-      employee.name =
-        cleanName;
-    }
+  employee.name = cleanName;
+}
 
     if (
       description !== undefined
@@ -2332,97 +2539,177 @@ const updateEmployee = async (
        SCHEDULE
     ======================================================== */
 
-    if (
-      schedule !==
-      undefined
-    ) {
-      const currentSchedule =
-        employee.schedule
-          ?.toObject?.() ||
-        employee.schedule ||
-        {};
+   /* ========================================================
+   SCHEDULE
+======================================================== */
 
-      const incomingWeekly =
-        schedule.weekly ||
-        {};
+if (schedule !== undefined) {
 
-      const currentWeekly =
-        currentSchedule.weekly ||
-        {};
+  // ==========================================================
+  // CURRENT SCHEDULE
+  // ==========================================================
 
-      const mergedSchedule = {
-        ...currentSchedule,
+  const currentSchedule =
+    employee.schedule?.toObject?.() ||
+    employee.schedule ||
+    {};
 
-        ...schedule,
+  // ==========================================================
+  // CURRENT WEEKLY
+  // ==========================================================
 
-        weekly: {
-          ...currentWeekly,
+  const currentWeekly =
+    currentSchedule.weekly ||
+    {};
 
-          ...incomingWeekly,
-        },
+  // ==========================================================
+  // INCOMING WEEKLY
+  // ==========================================================
 
-        exceptions:
-          schedule.exceptions !==
-          undefined
-            ? schedule.exceptions
-            : currentSchedule
-                .exceptions || [],
-      };
+  const incomingWeekly =
+    schedule.weekly ||
+    {};
 
-      if (
-        !mergedSchedule.triggerMode
-      ) {
-        mergedSchedule.triggerMode =
-          currentSchedule.triggerMode ||
-          "MANUAL";
-      }
+  // ==========================================================
+  // MERGE SCHEDULE
+  // ==========================================================
 
-      const validation =
-        validateSchedule(
-          mergedSchedule
-        );
+  const mergedSchedule = {
 
-      if (!validation.valid) {
-        return res.status(400).json({
-          success: false,
+    ...currentSchedule,
 
-          message:
-            validation.message,
-        });
-      }
+    ...schedule,
 
-      employee.schedule =
-        validation.schedule;
+    // --------------------------------------------------------
+    // START DATE
+    // --------------------------------------------------------
 
-      /**
-       * Keep Trigger Node synchronized.
-       */
+    startDate:
+      schedule.startDate !== undefined
+        ? schedule.startDate
+        : currentSchedule.startDate,
 
-      const nodes =
-        employee.workflow?.nodes ||
-        [];
+    // --------------------------------------------------------
+    // END DATE
+    // --------------------------------------------------------
 
-      for (const node of nodes) {
-        if (isTriggerNode(node)) {
-          node.config =
-            node.config || {};
+    endDate:
+      schedule.endDate !== undefined
+        ? schedule.endDate
+        : currentSchedule.endDate,
 
-          node.config.triggerMode =
-            validation.schedule
-              .triggerMode;
+    // --------------------------------------------------------
+    // WEEKLY
+    // --------------------------------------------------------
 
-          node.config.schedule = {
-            weekly:
-              validation.schedule
-                .weekly,
+    weekly: {
 
-            exceptions:
-              validation.schedule
-                .exceptions,
-          };
-        }
-      }
+      ...currentWeekly,
+
+      ...incomingWeekly,
+    },
+
+    // --------------------------------------------------------
+    // EXCEPTIONS
+    // --------------------------------------------------------
+
+    exceptions:
+      schedule.exceptions !== undefined
+        ? schedule.exceptions
+        : currentSchedule.exceptions ||
+          [],
+  };
+
+  // ==========================================================
+  // DEFAULT TRIGGER MODE
+  // ==========================================================
+
+  if (!mergedSchedule.triggerMode) {
+
+    mergedSchedule.triggerMode =
+      currentSchedule.triggerMode ||
+      "MANUAL";
+  }
+
+  // ==========================================================
+  // VALIDATE
+  // ==========================================================
+
+  const validation =
+    validateSchedule(
+      mergedSchedule
+    );
+
+  if (!validation.valid) {
+
+    return res.status(400).json({
+      success: false,
+      message:
+        validation.message,
+    });
+  }
+
+  // ==========================================================
+  // SAVE EMPLOYEE SCHEDULE
+  // ==========================================================
+
+  employee.schedule =
+    validation.schedule;
+
+  // ==========================================================
+  // KEEP TRIGGER NODE IN SYNC
+  // ==========================================================
+
+  const nodes =
+    employee.workflow?.nodes ||
+    [];
+
+  for (const node of nodes) {
+
+    if (!isTriggerNode(node)) {
+      continue;
     }
+
+    node.config =
+      node.config || {};
+
+    // --------------------------------------------------------
+    // Trigger mode
+    // --------------------------------------------------------
+
+    node.config.triggerMode =
+      validation
+        .schedule
+        .triggerMode;
+
+    // --------------------------------------------------------
+    // Complete schedule
+    // --------------------------------------------------------
+
+    node.config.schedule = {
+
+      startDate:
+        validation
+          .schedule
+          .startDate,
+
+      endDate:
+        validation
+          .schedule
+          .endDate,
+
+      weekly:
+        validation
+          .schedule
+          .weekly,
+
+      exceptions:
+        validation
+          .schedule
+          .exceptions,
+    };
+  }
+}
 
     /* ========================================================
        CONNECTION
@@ -2555,8 +2842,30 @@ const updateEmployee = async (
 
     employee.customized = true;
 
-    await employee.save();
+    await employee.save();if (
+  employeeNameChanged &&
+  employee.storage?.rootFolderId
+) {
+  try {
+    await renameEmployeeStorageFolder({
+      userId,
+      employeeFolderId:
+        employee.storage.rootFolderId,
+      employeeName: employee.name,
+      employeeId: employee._id.toString(),
+    });
 
+    console.log(
+      "✅ Google Drive employee folder renamed:",
+      employee.name
+    );
+  } catch (driveError) {
+    console.error(
+      "⚠️ Google Drive folder rename failed:",
+      driveError
+    );
+  }
+}
     return res.json({
       success: true,
 

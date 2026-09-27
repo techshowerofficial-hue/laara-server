@@ -252,32 +252,47 @@ const employeeSchema = new mongoose.Schema(
     // CONTENT PREFERENCES
     // ========================================================
 
-    content: {
-      niche: {
-        type: String,
-        default: "",
-      },
+  content: {
+  niche: {
+    type: String,
+    default: "",
+  },
 
-      topics: {
-        type: [String],
-        default: [],
-      },
+  topics: {
+    type: [String],
+    default: [],
+  },
 
-      duration: {
-        type: Number,
-        default: 60,
-      },
+  audience: {
+    type: String,
+    default: "",
+  },
 
-      aspectRatio: {
-        type: String,
-        default: "9:16",
-      },
+  visualStyle: {
+    type: String,
+    default: "",
+  },
 
-      outputFormat: {
-        type: String,
-        default: "reel",
-      },
-    },
+  cta: {
+    type: String,
+    default: "",
+  },
+
+  duration: {
+    type: Number,
+    default: 60,
+  },
+
+  aspectRatio: {
+    type: String,
+    default: "9:16",
+  },
+
+  outputFormat: {
+    type: String,
+    default: "reel",
+  },
+},
 
     // ========================================================
     // CHARACTER
@@ -397,6 +412,16 @@ schedule: {
     enum: ["MANUAL", "AUTOMATIC"],
     default: "MANUAL",
   },
+  // Employee schedule validity period
+  startDate: {
+    type: Date,
+    default: Date.now,
+  },
+
+  endDate: {
+    type: Date,
+    default: null,
+  },
 
   weekly: {
     workingDays: {
@@ -449,6 +474,12 @@ schedule: {
       },
     },
   ],
+
+  lastTriggeredSlot: {
+    type: String,
+    default: null,
+  },
+
 },
     // ========================================================
     // CONNECTIONS
@@ -461,6 +492,32 @@ schedule: {
         default: null,
       },
     },
+    storage: {
+  provider: {
+    type: String,
+    default: "GOOGLE_DRIVE",
+  },
+
+  rootFolderId: {
+    type: String,
+    default: null,
+  },
+
+  folders: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
+
+  status: {
+    type: String,
+    enum: [
+      "PENDING",
+      "READY",
+      "ERROR",
+    ],
+    default: "PENDING",
+  },
+},
 
     // ========================================================
     // SALARY / BILLING
