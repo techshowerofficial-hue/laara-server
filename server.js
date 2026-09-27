@@ -13,7 +13,12 @@ const startServer = async () => {
   try {
 
     await connectDB();
-
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Laara Server is running 🚀"
+  });
+});
 app.get("/healthz", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
