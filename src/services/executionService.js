@@ -53,9 +53,9 @@ const startNodeExecution = async ({
         }
       }
     },
-    {
-      new: true
-    }
+   {
+  returnDocument: "after"
+}
   );
 };
 
@@ -84,9 +84,9 @@ const completeNodeExecution = async ({
           new Date()
       }
     },
-    {
-      new: true
-    }
+  {
+  returnDocument: "after"
+}
   );
 };
 
@@ -115,9 +115,9 @@ const failNodeExecution = async ({
           new Date()
       }
     },
-    {
-      new: true
-    }
+  {
+  returnDocument: "after"
+}
   );
 };
 
@@ -144,9 +144,9 @@ const completeExecution = async ({
         finishedAt: new Date()
       }
     },
-    {
-      new: true
-    }
+ {
+  returnDocument: "after"
+}
   );
 };
 
@@ -173,9 +173,9 @@ const failExecution = async ({
         finishedAt: new Date()
       }
     },
-    {
-      new: true
-    }
+{
+  returnDocument: "after"
+}
   );
 };
 

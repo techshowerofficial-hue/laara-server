@@ -44,8 +44,18 @@ const startEmployeeTrial = async ({
     );
   }
 
-  const testAccount =
-    await isTestAccount(userId);
+const testAccount =
+  await isTestAccount(userId);
+
+const user =
+  await User.findById(userId)
+    .select("accountType");
+
+const isVIP =
+  user?.accountType === "VIP";
+
+const privilegedAccount =
+  testAccount || isVIP;
 
   const accountQuery =
     Account.findOne({
@@ -67,7 +77,7 @@ const startEmployeeTrial = async ({
   }
 
   if (
-    !testAccount &&
+    !privilegedAccount &&
     account.status !== "TRIAL" &&
     account.status !== "ACTIVE"
   ) {
@@ -102,7 +112,7 @@ const startEmployeeTrial = async ({
       );
 
   if (
-    !testAccount &&
+    !privilegedAccount &&
     account.status === "TRIAL" &&
     account.trial?.endDate
   ) {
@@ -458,35 +468,48 @@ const canEmployeeRun =
       };
     }
 
-    const testAccount =
-      await isTestAccount(userId);
+
+const testAccount =
+  await isTestAccount(userId);
+
+const user =
+  await User.findById(userId)
+    .select("accountType");
+
+const isVIP =
+  user?.accountType === "VIP";
+
+const privilegedAccount =
+  testAccount || isVIP;
 
     /* ========================================================
        TEST ACCOUNT
     ======================================================== */
 
-    if (testAccount) {
-      return {
-        allowed: true,
+if (privilegedAccount) {
+  return {
+    allowed: true,
 
-        mode: "TEST",
+    mode: isVIP
+      ? "VIP"
+      : "TEST",
 
-        employeeId:
-          employee._id,
+    employeeId:
+      employee._id,
 
-        outputsUsed:
-          Number(
-            employee.usage
-              ?.successfulOutputs || 0
-          ),
+    outputsUsed:
+      Number(
+        employee.usage
+          ?.successfulOutputs || 0
+      ),
 
-        maxOutputs:
-          Number.MAX_SAFE_INTEGER,
+    maxOutputs:
+      Number.MAX_SAFE_INTEGER,
 
-        outputsRemaining:
-          Number.MAX_SAFE_INTEGER,
-      };
-    }
+    outputsRemaining:
+      Number.MAX_SAFE_INTEGER,
+  };
+}
 
     /* ========================================================
        NORMAL ACCOUNT
@@ -691,13 +714,18 @@ const recordTrialOutput =
 
     const testAccount =
       await isTestAccount(userId);
+const user = await User.findById(userId)
+  .select("accountType");
 
+const isVIP = user?.accountType === "VIP";
+
+const privilegedAccount = testAccount || isVIP;
     /* ========================================================
        TEST ACCOUNT
        COUNT OUTPUT BUT NEVER BLOCK
     ======================================================== */
 
-    if (testAccount) {
+   if (privilegedAccount) {
       employee.usage =
         employee.usage || {};
 

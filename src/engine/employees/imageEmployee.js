@@ -209,7 +209,7 @@ console.log(
         config: {
           size:
             process.env.OPENAI_IMAGE_SIZE ||
-            "1024x1792",
+            "1024x1536",
 
           quality:
             process.env.OPENAI_IMAGE_QUALITY ||

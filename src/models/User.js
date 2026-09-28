@@ -57,6 +57,11 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
+accountType: {
+  type: String,
+  enum: ["NORMAL", "VIP"],
+  default: "NORMAL"
+},
     // =========================
     // PASSWORD RESET
     // =========================

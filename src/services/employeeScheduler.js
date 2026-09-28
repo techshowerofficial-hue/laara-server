@@ -219,9 +219,9 @@ const claimScheduledSlot = async ({
             slot,
         },
       },
-      {
-        new: true,
-      }
+    {
+  returnDocument: "after",
+}
     );
 
   return employee;

@@ -867,6 +867,7 @@ const buildEmployeeData = ({
   schedule,
   characterId,
   instagramConnectionId,
+  privilegedAccount,
 }) => {
   const employee = {
     userId,
@@ -892,23 +893,30 @@ const buildEmployeeData = ({
     type:
       agentTemplate.type,
 
-    status:
-      "TRIAL",
+status:
+  privilegedAccount
+    ? "ACTIVE"
+    : "TRIAL",
 
     /* ========================================================
        TRIAL
     ======================================================== */
 
-    trial: {
-      isActive: true,
+  trial: {
+  isActive:
+    !privilegedAccount,
 
-      startDate:
-        new Date(),
+  startDate:
+    privilegedAccount
+      ? null
+      : new Date(),
 
-      endDate: null,
+  endDate:
+    null,
 
-      used: true,
-    },
+  used:
+    !privilegedAccount,
+},
 
     /* ========================================================
        IDENTITY
@@ -1105,35 +1113,34 @@ const buildEmployeeData = ({
        BILLING
     ======================================================== */
 
-    billing: {
-      salary,
+billing: {
+  salary,
 
-      currency:
-        agentTemplate.salaryConfig
-          ?.currency ||
-        "INR",
+  currency:
+    agentTemplate.salaryConfig?.currency ||
+    "INR",
 
-      cycle:
-        agentTemplate.salaryConfig
-          ?.billingCycle ||
-        "MONTHLY",
+  cycle:
+    agentTemplate.salaryConfig?.billingCycle ||
+    "MONTHLY",
 
-      status:
-        "TRIAL",
+  status:
+    privilegedAccount
+      ? "ACTIVE"
+      : "TRIAL",
 
-      currentPeriodStart:
-        new Date(),
+  currentPeriodStart:
+    new Date(),
 
-      currentPeriodEnd:
-        null,
+  currentPeriodEnd:
+    null,
 
-      nextPaymentDate:
-        null,
+  nextPaymentDate:
+    null,
 
-      lastPaymentDate:
-        null,
-    },
-
+  lastPaymentDate:
+    null,
+},
     /* ========================================================
        TEMPLATE WORKFLOW
     ======================================================== */
@@ -1196,6 +1203,17 @@ const hireEmployee = async (
       const testAccount =
   await isTestAccount(userId);
 
+  const user =
+  await User.findById(userId).select(
+    "accountType"
+  );
+
+const isVIP =
+  user?.accountType === "VIP";
+
+const privilegedAccount =
+  testAccount || isVIP;
+
     const {
       type,
       agentTemplateId,
@@ -1248,8 +1266,8 @@ const hireEmployee = async (
            ACCOUNT STATUS
         ==================================================== */
 
- if (
-  !testAccount &&
+if (
+  !privilegedAccount &&
   account.status === "TRIAL" &&
   account.trial?.isActive &&
   account.trial?.endDate &&
@@ -1264,7 +1282,7 @@ const hireEmployee = async (
            ACCOUNT TRIAL
         ==================================================== */
 if (
-  !testAccount &&
+  !privilegedAccount &&
   account.status === "TRIAL" &&
   account.trial?.isActive &&
   account.trial?.endDate &&
@@ -1337,7 +1355,7 @@ const isUnlimitedAccount =
 
 if (
   !isUnlimitedAccount &&
-  !testAccount
+  !privilegedAccount
 ) {
   const activeEmployeeCount =
     await Employee.countDocuments({
@@ -1379,7 +1397,7 @@ const existingTrial =
 
 if (
   existingTrial &&
-  !testAccount
+  !privilegedAccount
 ) {
   throw new Error(
     "EMPLOYEE_TRIAL_ALREADY_USED"
@@ -1527,7 +1545,7 @@ if (
 const trialStart =
   new Date();
 
-let trialEnd = testAccount
+let trialEnd = privilegedAccount
   ? addDays(
       trialStart,
       3650
@@ -1538,7 +1556,7 @@ let trialEnd = testAccount
     );
 
 if (
-  !testAccount &&
+ !privilegedAccount &&
   account.status === "TRIAL" &&
   account.trial?.endDate
 ) {
@@ -1597,22 +1615,25 @@ if (
               instagramConnection
                 ? instagramConnection._id
                 : null,
+                 privilegedAccount,
           });
 
-        employeeData.trial.startDate =
-          trialStart;
+if (!privilegedAccount) {
+  employeeData.trial.startDate =
+    trialStart;
 
-        employeeData.trial.endDate =
-          trialEnd;
+  employeeData.trial.endDate =
+    trialEnd;
 
-        employeeData.billing.currentPeriodStart =
-          trialStart;
+  employeeData.billing.currentPeriodStart =
+    trialStart;
 
-        employeeData.billing.currentPeriodEnd =
-          trialEnd;
+  employeeData.billing.currentPeriodEnd =
+    trialEnd;
 
-        employeeData.billing.nextPaymentDate =
-          trialEnd;
+  employeeData.billing.nextPaymentDate =
+    trialEnd;
+}
 
         /* ====================================================
            CREATE EMPLOYEE
@@ -1632,7 +1653,7 @@ if (
         /* ====================================================
            CREATE TRIAL USAGE
         ==================================================== */
-if (!testAccount) {
+if (!privilegedAccount) {
   await EmployeeTrialUsage.create(
     [
       {
@@ -2133,13 +2154,32 @@ const getEmployeeBilling = async (req, res) => {
       _id: employeeId,
       userId,
     });
-
     if (!employee) {
       return res.status(404).json({
         success: false,
         message: "Employee not found",
       });
     }
+    const user = await User.findById(userId).select("accountType");
+const isVIP = user?.accountType === "VIP"; 
+if (isVIP) {
+  return res.json({
+    success: true,
+    billing: {
+      status: "ACTIVE",
+      isTrial: false,
+      trial: {
+        isActive: false,
+        startDate: null,
+        endDate: null,
+        maxOutputs: Number.MAX_SAFE_INTEGER,
+        outputsUsed: 0,
+        outputsRemaining: Number.MAX_SAFE_INTEGER,
+      },
+    },
+  });
+}
+
 
     const trialUsage = await EmployeeTrialUsage.findOne({
       userId,

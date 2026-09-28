@@ -145,6 +145,7 @@ const buildUserResponse = user => {
     email: user.email,
     role: user.role,
     status: user.status,
+    accountType: user.accountType || "NORMAL",
     isEmailVerified: user.isEmailVerified,
     createdAt: user.createdAt,
   };
