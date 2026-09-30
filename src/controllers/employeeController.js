@@ -1798,8 +1798,9 @@ if (createdEmployee) {
     return res.status(201).json({
       success: true,
 
-      message:
-        "AI Employee hired successfully. Your 2-day trial has started.",
+     message: privilegedAccount
+  ? "AI Employee hired successfully."
+  : "AI Employee hired successfully. Your 2-day trial has started.",
 
       employee: {
         id:
@@ -1839,13 +1840,15 @@ if (createdEmployee) {
             createdEmployee.trial
               .endDate,
 
-          maxOutputs:
-            EMPLOYEE_TRIAL_MAX_OUTPUTS,
+    maxOutputs: privilegedAccount
+  ? Number.MAX_SAFE_INTEGER
+  : EMPLOYEE_TRIAL_MAX_OUTPUTS,
 
-          outputsUsed: 0,
+outputsUsed: 0,
 
-          outputsRemaining:
-            EMPLOYEE_TRIAL_MAX_OUTPUTS,
+outputsRemaining: privilegedAccount
+  ? Number.MAX_SAFE_INTEGER
+  : EMPLOYEE_TRIAL_MAX_OUTPUTS,
         },
 
         workload: {

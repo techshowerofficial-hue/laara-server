@@ -1,29 +1,20 @@
 const {
   getExecutionById,
-  getEmployeeExecutions
+  getEmployeeExecutions,
 } = require("../services/executionService");
 
 const {
-  runEmployee
+  runEmployee,
 } = require("../engine/employeeEngine");
-
 
 // ========================================
 // RUN EMPLOYEE
 // ========================================
 
-const runEmployeeExecution = async (
-  req,
-  res
-) => {
+const runEmployeeExecution = async (req, res) => {
   try {
-
-    const userId =
-      req.user?.userId;
-
-    const employeeId =
-      req.params.employeeId;
-
+    const userId = req.user?.userId;
+    const employeeId = req.params.employeeId;
 
     // ========================================
     // AUTH CHECK
@@ -32,11 +23,9 @@ const runEmployeeExecution = async (
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message:
-          "Unauthorized"
+        message: "Unauthorized",
       });
     }
-
 
     // ========================================
     // EMPLOYEE ID CHECK
@@ -45,59 +34,45 @@ const runEmployeeExecution = async (
     if (!employeeId) {
       return res.status(400).json({
         success: false,
-        message:
-          "Employee ID is required"
+        message: "Employee ID is required",
       });
     }
-
 
     // ========================================
     // INITIAL INPUT
     // ========================================
 
-    const initialInput =
-      req.body?.input || {};
-
+    const initialInput = req.body?.input || {};
 
     // ========================================
-    // RUN EMPLOYEE
+    // START EXECUTION IN BACKGROUND
     // ========================================
 
-    const execution =
-      await runEmployee(
-        employeeId,
-        userId,
-        initialInput
-      );
-
+    const execution = await runEmployee(
+      employeeId,
+      userId,
+      initialInput,
+      {
+        background: true,
+      }
+    );
 
     // ========================================
-    // SUCCESS
+    // IMMEDIATE RESPONSE
     // ========================================
 
-    return res.status(200).json({
+    return res.status(202).json({
       success: true,
-
-      message:
-        "Employee executed successfully",
-
-      execution
+      message: "Employee execution started",
+      execution,
     });
-
   } catch (error) {
-
     console.error(
       "Run employee error:",
       error
     );
 
-
-    // ========================================
-    // BILLING / TRIAL ERRORS
-    // ========================================
-
     const billingStatusMap = {
-
       EMPLOYEE_NOT_FOUND: 404,
 
       ACCOUNT_NOT_FOUND: 404,
@@ -114,48 +89,34 @@ const runEmployeeExecution = async (
 
       EMPLOYEE_NOT_AVAILABLE: 403,
 
-      TRIAL_USAGE_NOT_FOUND: 500
+      TRIAL_USAGE_NOT_FOUND: 500,
     };
-
 
     const billingStatus =
       billingStatusMap[
         error.code ||
-        error.message
+          error.message
       ];
 
-
     if (billingStatus) {
-
       return res.status(
         billingStatus
       ).json({
-
         success: false,
-
-        message:
-          error.message,
-
+        message: error.message,
         billing:
-          error.billing || null
+          error.billing || null,
       });
     }
 
-
-    // ========================================
-    // OTHER ERROR
-    // ========================================
-
     return res.status(500).json({
       success: false,
-
       message:
         error.message ||
-        "Employee execution failed"
+        "Employee execution failed",
     });
   }
 };
-
 
 // ========================================
 // GET EXECUTION
@@ -165,102 +126,78 @@ const getExecution = async (
   req,
   res
 ) => {
-
   try {
+    const execution =
+      await getExecutionById({
+        executionId:
+          req.params.executionId,
 
-const execution =
-  await getExecutionById({
-    executionId:
-      req.params.executionId,
-
-    userId:
-      req.user.userId
-  });
-
+        userId:
+          req.user.userId,
+      });
 
     if (!execution) {
-
       return res.status(404).json({
         success: false,
         message:
-          "Execution not found"
+          "Execution not found",
       });
     }
 
-
     return res.json({
       success: true,
-      execution
+      execution,
     });
-
   } catch (error) {
-
     console.error(
       "Get execution error:",
       error
     );
 
-
     return res.status(500).json({
       success: false,
-
       message:
-        "Failed to fetch execution"
+        "Failed to fetch execution",
     });
   }
 };
-
 
 // ========================================
 // EMPLOYEE EXECUTION HISTORY
 // ========================================
 
 const getEmployeeExecutionHistory =
-  async (
-    req,
-    res
-  ) => {
-
+  async (req, res) => {
     try {
+      const executions =
+        await getEmployeeExecutions({
+          employeeId:
+            req.params.employeeId,
 
- const executions =
-  await getEmployeeExecutions({
-    employeeId:
-      req.params.employeeId,
-
-    userId:
-      req.user.userId
-  });
-
+          userId:
+            req.user.userId,
+        });
 
       return res.json({
         success: true,
-        executions
+        executions,
       });
-
     } catch (error) {
-
       console.error(
         "Get execution history error:",
         error
       );
 
-
       return res.status(500).json({
         success: false,
-
         message:
-          "Failed to fetch execution history"
+          "Failed to fetch execution history",
       });
     }
   };
 
-
 module.exports = {
-
   runEmployeeExecution,
-
   getExecution,
-
-  getEmployeeExecutionHistory
+  getEmployeeExecutionHistory,
 };

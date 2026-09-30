@@ -287,7 +287,8 @@ const executeNode = async (
 const runEmployee = async (
   employeeId,
   userId,
-  initialInput = {}
+  initialInput = {},
+  options = {}
 ) => {
   if (!userId) {
     throw new Error(
@@ -301,11 +302,9 @@ const runEmployee = async (
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | BILLING / TRIAL CHECK
-  |--------------------------------------------------------------------------
-  */
+  // ========================================
+  // BILLING / TRIAL CHECK
+  // ========================================
 
   const permission =
     await canEmployeeRun({
@@ -328,11 +327,9 @@ const runEmployee = async (
     throw error;
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | LOAD EMPLOYEE
-  |--------------------------------------------------------------------------
-  */
+  // ========================================
+  // LOAD EMPLOYEE
+  // ========================================
 
   const employee =
     await Employee.findOne({
@@ -345,27 +342,21 @@ const runEmployee = async (
       "EMPLOYEE_NOT_FOUND"
     );
   }
-/*
-|--------------------------------------------------------------------------
-| DEDICATED EMPLOYEE PIPELINES
-|--------------------------------------------------------------------------
-|
-| New Laara architecture:
-|
-| image_reel
-|   → imageEmployee.js
-|
-| No React Flow nodes/edges are required.
-|
-*/
 
-if (employee.type === "image_reel") {
+  // ========================================
+  // CREATE EXECUTION CONTEXT
+  // ========================================
+
   const context =
     createExecutionContext(
       employee,
       userId,
       initialInput
     );
+
+  // ========================================
+  // CREATE EXECUTION IN DB
+  // ========================================
 
   await createExecution({
     executionId:
@@ -379,108 +370,179 @@ if (employee.type === "image_reel") {
     initialInput,
   });
 
-  try {
-    const result =
-      await runImageEmployee({
+  // ========================================
+  // BACKGROUND MODE
+  // ========================================
+
+  if (options.background) {
+    setImmediate(() => {
+      executePreparedEmployee({
         employee,
         userId,
-        executionId:
-          context.executionId,
-        input:
-          initialInput,
+        employeeId,
+        initialInput,
+        context,
+      }).catch((error) => {
+        console.error(
+          `[${context.executionId}] Background execution error:`,
+          error
+        );
       });
+    });
 
-    context.status =
-      "success";
-
-    context.finishedAt =
-      new Date();
-
-    context.finalOutput =
-      result?.output || result;
-
-    await completeExecution({
+    // IMPORTANT:
+    // Return immediately.
+    return {
       executionId:
         context.executionId,
 
-      userId,
+      employeeId,
 
-      finalOutput:
-        context.finalOutput,
-    });
+      status: "running",
 
-    const usage =
-      await recordTrialOutput({
-        employeeId,
-        userId,
-      });
+      startedAt:
+        context.startedAt ||
+        new Date(),
+    };
+  }
 
-    context.trialUsage =
-      usage;
+  // ========================================
+  // NORMAL / SCHEDULER MODE
+  // ========================================
 
-    console.log(
-      `[${context.executionId}] Image Reel Employee completed successfully.`
-    );
+  return await executePreparedEmployee({
+    employee,
+    userId,
+    employeeId,
+    initialInput,
+    context,
+  });
+};
+// ========================================
+// PREPARED EMPLOYEE EXECUTION
+// ========================================
 
-    return context;
+const executePreparedEmployee = async ({
+  employee,
+  userId,
+  employeeId,
+  initialInput,
+  context,
+}) => {
 
-  } catch (error) {
+  // ========================================
+  // IMAGE REEL EMPLOYEE
+  // ========================================
 
-    context.status =
-      "failed";
-
-    context.finishedAt =
-      new Date();
-
-    context.error =
-      error?.message ||
-      "IMAGE_EMPLOYEE_EXECUTION_FAILED";
-
+  if (
+    employee.type ===
+    "image_reel"
+  ) {
     try {
-      await failExecution({
+      const result =
+        await runImageEmployee({
+          employee,
+
+          userId,
+
+          executionId:
+            context.executionId,
+
+          input:
+            initialInput,
+        });
+
+      context.status =
+        "success";
+
+      context.finishedAt =
+        new Date();
+
+      context.finalOutput =
+        result?.output ||
+        result;
+
+      await completeExecution({
         executionId:
           context.executionId,
 
         userId,
 
-        error:
-          context.error,
+        finalOutput:
+          context.finalOutput,
       });
-    } catch (executionError) {
-      console.error(
-        "Failed to save image employee execution failure:",
+
+      // ========================================
+      // TRIAL USAGE
+      // ========================================
+
+      const usage =
+        await recordTrialOutput({
+          employeeId,
+          userId,
+        });
+
+      context.trialUsage =
+        usage;
+
+      console.log(
+        `[${context.executionId}] Image Reel Employee completed successfully.`
+      );
+
+      return context;
+
+    } catch (error) {
+
+      context.status =
+        "failed";
+
+      context.finishedAt =
+        new Date();
+
+      context.error =
+        error?.message ||
+        "IMAGE_EMPLOYEE_EXECUTION_FAILED";
+
+      try {
+        await failExecution({
+          executionId:
+            context.executionId,
+
+          userId,
+
+          error:
+            context.error,
+        });
+      } catch (
         executionError
-      );
-    }
+      ) {
+        console.error(
+          "Failed to save image employee execution failure:",
+          executionError
+        );
+      }
 
-    try {
-      await recordFailedOutput({
-        employeeId,
-        userId,
-      });
-    } catch (usageError) {
-      console.error(
-        "Failed to record failed output:",
+      try {
+        await recordFailedOutput({
+          employeeId,
+          userId,
+        });
+      } catch (
         usageError
-      );
-    }
+      ) {
+        console.error(
+          "Failed to record failed output:",
+          usageError
+        );
+      }
 
-    throw error;
+      throw error;
+    }
   }
-}
-  /*
-  |--------------------------------------------------------------------------
-  | LOAD WORKFLOW
-  |--------------------------------------------------------------------------
-  |
-  | IMPORTANT:
-  |
-  | Workflow lives inside:
-  |
-  | employee.workflow.nodes
-  | employee.workflow.edges
-  |
-  */
+
+  // ========================================
+  // NORMAL WORKFLOW
+  // ========================================
 
   const workflow =
     employee.workflow || {};
@@ -499,22 +561,18 @@ if (employee.type === "image_reel") {
       ? workflow.edges
       : [];
 
-  /*
-  |--------------------------------------------------------------------------
-  | VALIDATE WORKFLOW
-  |--------------------------------------------------------------------------
-  */
+  // ========================================
+  // VALIDATE WORKFLOW
+  // ========================================
 
   validateWorkflow(
     nodes,
     edges
   );
 
-  /*
-  |--------------------------------------------------------------------------
-  | FIND START NODES
-  |--------------------------------------------------------------------------
-  */
+  // ========================================
+  // FIND START NODES
+  // ========================================
 
   const startNodes =
     findStartNodes(
@@ -530,43 +588,11 @@ if (employee.type === "image_reel") {
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | EXECUTION CONTEXT
-  |--------------------------------------------------------------------------
-  */
-
-  const context =
-    createExecutionContext(
-      employee,
-      userId,
-      initialInput
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | CREATE EXECUTION
-  |--------------------------------------------------------------------------
-  */
-
-  await createExecution({
-    executionId:
-      context.executionId,
-
-    employeeId:
-      employee._id,
-
-    userId,
-
-    initialInput,
-  });
-
   try {
-    /*
-    |--------------------------------------------------------------------------
-    | QUEUE
-    |--------------------------------------------------------------------------
-    */
+
+    // ========================================
+    // QUEUE
+    // ========================================
 
     const executionQueue =
       startNodes.map(
@@ -578,11 +604,9 @@ if (employee.type === "image_reel") {
         })
       );
 
-    /*
-    |--------------------------------------------------------------------------
-    | EXECUTION LOOP
-    |--------------------------------------------------------------------------
-    */
+    // ========================================
+    // EXECUTION LOOP
+    // ========================================
 
     while (
       executionQueue.length > 0
@@ -596,11 +620,9 @@ if (employee.type === "image_reel") {
       const input =
         currentExecution.input;
 
-      /*
-      |--------------------------------------------------------------------------
-      | EXECUTE NODE
-      |--------------------------------------------------------------------------
-      */
+      // ========================================
+      // EXECUTE NODE
+      // ========================================
 
       const output =
         await executeNode(
@@ -609,11 +631,9 @@ if (employee.type === "image_reel") {
           context
         );
 
-      /*
-      |--------------------------------------------------------------------------
-      | STORE RESULT
-      |--------------------------------------------------------------------------
-      */
+      // ========================================
+      // STORE RESULT
+      // ========================================
 
       context.results[
         node.id
@@ -632,11 +652,9 @@ if (employee.type === "image_reel") {
           new Date(),
       };
 
-      /*
-      |--------------------------------------------------------------------------
-      | NEXT NODES
-      |--------------------------------------------------------------------------
-      */
+      // ========================================
+      // NEXT NODES
+      // ========================================
 
       const nextNodes =
         getNextNodes(
@@ -645,11 +663,9 @@ if (employee.type === "image_reel") {
           edges
         );
 
-      /*
-      |--------------------------------------------------------------------------
-      | FINAL NODE
-      |--------------------------------------------------------------------------
-      */
+      // ========================================
+      // FINAL NODE
+      // ========================================
 
       if (
         nextNodes.length === 0
@@ -660,11 +676,9 @@ if (employee.type === "image_reel") {
         continue;
       }
 
-      /*
-      |--------------------------------------------------------------------------
-      | ADD NEXT NODES
-      |--------------------------------------------------------------------------
-      */
+      // ========================================
+      // ADD NEXT NODES
+      // ========================================
 
       for (
         const nextNode of
@@ -680,11 +694,9 @@ if (employee.type === "image_reel") {
       }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | SUCCESS
-    |--------------------------------------------------------------------------
-    */
+    // ========================================
+    // SUCCESS
+    // ========================================
 
     context.status =
       "success";
@@ -702,11 +714,9 @@ if (employee.type === "image_reel") {
         context.finalOutput,
     });
 
-    /*
-    |--------------------------------------------------------------------------
-    | TRIAL USAGE
-    |--------------------------------------------------------------------------
-    */
+    // ========================================
+    // TRIAL USAGE
+    // ========================================
 
     const usage =
       await recordTrialOutput({
@@ -723,12 +733,12 @@ if (employee.type === "image_reel") {
     );
 
     return context;
+
   } catch (error) {
-    /*
-    |--------------------------------------------------------------------------
-    | FAILURE
-    |--------------------------------------------------------------------------
-    */
+
+    // ========================================
+    // FAILURE
+    // ========================================
 
     context.status =
       "failed";
@@ -750,7 +760,9 @@ if (employee.type === "image_reel") {
         error:
           context.error,
       });
-    } catch (executionError) {
+    } catch (
+      executionError
+    ) {
       console.error(
         "Failed to save execution failure:",
         executionError
@@ -763,7 +775,9 @@ if (employee.type === "image_reel") {
 
         userId,
       });
-    } catch (usageError) {
+    } catch (
+      usageError
+    ) {
       console.error(
         "Failed to record failed output:",
         usageError
@@ -773,7 +787,6 @@ if (employee.type === "image_reel") {
     throw error;
   }
 };
-
 module.exports = {
   runEmployee,
   executeNode,

@@ -2,36 +2,92 @@ const triggerNode = require("../nodes/triggerNode");
 const promptGeneratorNode = require("../nodes/promptGeneratorNode");
 const imageGeneratorNode = require("../nodes/imageGeneratorNode");
 const captionHashtagNode = require("../nodes/captionHashtagNode");
+
+const {
+  startNodeExecution,
+  completeNodeExecution,
+  failNodeExecution,
+} = require("../../services/executionService");
+
 const googleDriveOutputNode =
   require("../nodes/googleDriveOutputNode");
-const instagramNode = require("../nodes/instagramNode");
+
+const instagramNode =
+  require("../nodes/instagramNode");
+
 const characterReferenceNode =
   require("../nodes/characterReferenceNode");
-/**
- * ============================================================
- * LAARA — IMAGE REEL EMPLOYEE
- * ============================================================
- *
- * Fixed internal workflow:
- *
- * Employee Profile
- *       ↓
- * Trigger
- *       ↓
- * Prompt Generator
- *       ↓
- * Image Generator
- *       ↓
- * Caption + Hashtags
- *       ↓
- * Cloudinary
- *       ↓
- * Instagram
- *
- * User does NOT control this internal pipeline.
- * Laara controls the sequence.
- * ============================================================
- */
+
+
+/*
+|--------------------------------------------------------------------------
+| RUN TRACKED STEP
+|--------------------------------------------------------------------------
+*/
+
+const runTrackedStep = async ({
+  executionId,
+  userId,
+  nodeId,
+  type,
+  input,
+  execute,
+}) => {
+
+  await startNodeExecution({
+    executionId,
+    userId,
+    nodeId,
+    type,
+    input,
+  });
+
+  try {
+
+    const output = await execute();
+
+    await completeNodeExecution({
+      executionId,
+      userId,
+      nodeId,
+      output,
+    });
+
+    return output;
+
+  } catch (error) {
+
+    await failNodeExecution({
+      executionId,
+      userId,
+      nodeId,
+      error:
+        error?.message ||
+        "NODE_EXECUTION_FAILED",
+    });
+
+    throw error;
+  }
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| LAARA IMAGE REEL EMPLOYEE
+|--------------------------------------------------------------------------
+|
+| Internal pipeline:
+|
+| 1. Trigger
+| 2. Generate Prompt
+| 3. Character Reference
+| 4. Generate Image
+| 5. Caption + Hashtags
+| 6. Laara
+| 7. Instagram
+|
+|--------------------------------------------------------------------------
+*/
 
 const runImageEmployee = async ({
   employee,
@@ -39,6 +95,7 @@ const runImageEmployee = async ({
   executionId,
   input = {},
 }) => {
+
   if (!employee) {
     throw new Error(
       "Image Employee: employee is required"
@@ -66,11 +123,12 @@ const runImageEmployee = async ({
     );
   }
 
+
   /*
-   * Shared execution context.
-   *
-   * Every node receives this.
-   */
+  |--------------------------------------------------------------------------
+  | SHARED CONTEXT
+  |--------------------------------------------------------------------------
+  */
 
   const context = {
     userId,
@@ -79,21 +137,21 @@ const runImageEmployee = async ({
     employee,
   };
 
+
   let currentInput = {
     ...input,
   };
 
-  /* ============================================================
-     START
-  ============================================================ */
 
-  console.log("\n");
+  console.log("");
   console.log(
     "============================================================"
   );
+
   console.log(
     "🤖 LAARA IMAGE REEL EMPLOYEE STARTED"
   );
+
   console.log(
     "============================================================"
   );
@@ -107,57 +165,76 @@ const runImageEmployee = async ({
   console.log("\n⚙️ EXECUTION ID:");
   console.log(executionId);
 
-  console.log(
-    "\n============================================================"
-  );
 
-  /* ============================================================
-     STEP 1 — TRIGGER
-  ============================================================ */
+  /*
+  |--------------------------------------------------------------------------
+  | STEP 1 — TRIGGER
+  |--------------------------------------------------------------------------
+  */
 
-  console.log("\n");
-  console.log("1️⃣ TRIGGER");
+  console.log("\n1️⃣ TRIGGER");
   console.log("--------------------------------");
 
-  currentInput =
-    await triggerNode.execute({
-      input: currentInput,
+  currentInput = await runTrackedStep({
+    executionId,
+    userId,
 
-      node: {
-        type: "trigger",
+    nodeId: "trigger",
+    type: "trigger",
 
-        config: {
-          triggerMode:
-            employee.schedule?.triggerMode ||
-            "MANUAL",
+    input: currentInput,
+
+    execute: () =>
+      triggerNode.execute({
+        input: currentInput,
+
+        node: {
+          type: "trigger",
+
+          config: {
+            triggerMode:
+              employee.schedule?.triggerMode ||
+              "MANUAL",
+          },
         },
-      },
 
-      context,
-    });
+        context,
+      }),
+  });
 
   console.log("✅ Trigger completed");
 
-  /* ============================================================
-     STEP 2 — PROMPT GENERATOR
-  ============================================================ */
 
-  console.log("\n");
-  console.log("2️⃣ PROMPT GENERATOR");
+  /*
+  |--------------------------------------------------------------------------
+  | STEP 2 — PROMPT GENERATOR
+  |--------------------------------------------------------------------------
+  */
+
+  console.log("\n2️⃣ PROMPT GENERATOR");
   console.log("--------------------------------");
 
-  currentInput =
-    await promptGeneratorNode.execute({
-      input: currentInput,
+  currentInput = await runTrackedStep({
+    executionId,
+    userId,
 
-      node: {
-        type: "promptGenerator",
+    nodeId: "promptGenerator",
+    type: "promptGenerator",
 
-        config: {},
-      },
+    input: currentInput,
 
-      context,
-    });
+    execute: () =>
+      promptGeneratorNode.execute({
+        input: currentInput,
+
+        node: {
+          type: "promptGenerator",
+          config: {},
+        },
+
+        context,
+      }),
+  });
 
   console.log("✅ Prompt generated");
 
@@ -170,94 +247,132 @@ const runImageEmployee = async ({
       "Prompt not found"
   );
 
-  /* ============================================================
-   STEP 3 — CHARACTER REFERENCE
-============================================================ */
 
-console.log("\n");
-console.log("3️⃣ CHARACTER REFERENCE");
-console.log("--------------------------------");
+  /*
+  |--------------------------------------------------------------------------
+  | STEP 3 — CHARACTER REFERENCE
+  |--------------------------------------------------------------------------
+  */
 
-currentInput =
-  await characterReferenceNode.execute({
-    input: currentInput,
-    node: {
-      type: "characterReference",
-      config: {},
-    },
-    context,
-  });
-
-console.log(
-  "✅ Character reference processed"
-);
-  /* ============================================================
-     STEP 4 — IMAGE GENERATOR
-  ============================================================ */
-
-  console.log("\n");
-  console.log("3️⃣ IMAGE GENERATOR");
+  console.log("\n3️⃣ CHARACTER REFERENCE");
   console.log("--------------------------------");
 
-  currentInput =
-    await imageGeneratorNode.execute({
-      input: currentInput,
+  currentInput = await runTrackedStep({
+    executionId,
+    userId,
 
-      node: {
-        type: "imageGenerator",
+    nodeId: "characterReference",
+    type: "characterReference",
 
-        config: {
-          size:
-            process.env.OPENAI_IMAGE_SIZE ||
-            "1024x1536",
+    input: currentInput,
 
-          quality:
-            process.env.OPENAI_IMAGE_QUALITY ||
-            "auto",
+    execute: () =>
+      characterReferenceNode.execute({
+        input: currentInput,
+
+        node: {
+          type: "characterReference",
+          config: {},
         },
-      },
 
-      context,
-    });
+        context,
+      }),
+  });
+
+  console.log(
+    "✅ Character reference processed"
+  );
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | STEP 4 — IMAGE GENERATOR
+  |--------------------------------------------------------------------------
+  */
+
+  console.log("\n4️⃣ IMAGE GENERATOR");
+  console.log("--------------------------------");
+
+  currentInput = await runTrackedStep({
+    executionId,
+    userId,
+
+    nodeId: "imageGenerator",
+    type: "imageGenerator",
+
+    input: currentInput,
+
+    execute: () =>
+      imageGeneratorNode.execute({
+        input: currentInput,
+
+        node: {
+          type: "imageGenerator",
+
+          config: {
+            size:
+              process.env.OPENAI_IMAGE_SIZE ||
+              "1024x1536",
+
+            quality:
+              process.env.OPENAI_IMAGE_QUALITY ||
+              "auto",
+          },
+        },
+
+        context,
+      }),
+  });
 
   console.log("✅ Image generated");
 
   console.log("\n🖼️ GENERATED IMAGE FILE:");
-
   console.log(
     currentInput.generatedFile ||
       "File not found"
   );
 
   console.log("\n📁 LOCAL IMAGE PATH:");
-
   console.log(
     currentInput.generatedPath ||
       "Path not found"
   );
 
-  /* ============================================================
-     STEP 5 — CAPTION + HASHTAGS
-  ============================================================ */
 
-  console.log("\n");
-  console.log("4️⃣ CAPTION + HASHTAGS");
+  /*
+  |--------------------------------------------------------------------------
+  | STEP 5 — CAPTION + HASHTAGS
+  |--------------------------------------------------------------------------
+  */
+
+  console.log("\n5️⃣ CAPTION + HASHTAGS");
   console.log("--------------------------------");
 
-  currentInput =
-    await captionHashtagNode.execute({
-      input: currentInput,
+  currentInput = await runTrackedStep({
+    executionId,
+    userId,
 
-      node: {
-        type: "captionHashtag",
+    nodeId: "captionHashtag",
+    type: "captionHashtag",
 
-        config: {},
-      },
+    input: currentInput,
 
-      context,
-    });
+    execute: () =>
+      captionHashtagNode.execute({
+        input: currentInput,
 
-  console.log("✅ Caption and hashtags generated");
+        node: {
+          type: "captionHashtag",
+          config: {},
+        },
+
+        context,
+      }),
+  });
+
+  console.log(
+    "✅ Caption and hashtags generated"
+  );
 
   console.log("\n📝 CAPTION:");
   console.log("--------------------------------");
@@ -272,101 +387,127 @@ console.log(
 
   console.log(
     currentInput.hashtagsText ||
-  Array.isArray(currentInput.hashtags)
-  ? currentInput.hashtags.join(" ")
-  : currentInput.hashtags || "Hashtags not found"
+      (
+        Array.isArray(
+          currentInput.hashtags
+        )
+          ? currentInput.hashtags.join(" ")
+          : currentInput.hashtags
+      ) ||
+      "Hashtags not found"
   );
 
-
-/* ============================================================
-   STEP 6 — GOOGLE DRIVE OUTPUT
-============================================================ */
-
-console.log("\n");
-console.log("5️⃣ GOOGLE DRIVE OUTPUT");
-console.log("--------------------------------");
-
-currentInput =
-  await googleDriveOutputNode.execute({
-    input: currentInput,
-
-    node: {
-      type: "googleDriveOutput",
-
-      config: {},
-    },
-
-    context,
-  });
-
-console.log(
-  "✅ Image saved to Google Drive"
-);
-
-
-  /* ============================================================
-     STEP 7 — INSTAGRAM
-  ============================================================ */
-
-  console.log("\n");
-  console.log("6️⃣ INSTAGRAM");
-  console.log("--------------------------------");
 
   /*
-   * Instagram needs a PUBLIC HTTPS image URL.
-   */
-/*
- * Instagram needs a PUBLIC HTTPS image URL.
- *
- * Google Drive Output node already returns webViewLink.
- */
+  |--------------------------------------------------------------------------
+  | STEP 6 — LAARA
+  |--------------------------------------------------------------------------
+  |
+  | Google Drive is the internal storage/output mechanism.
+  | UI/execution pipeline calls this step "Laara".
+  |
+  |--------------------------------------------------------------------------
+  */
 
-const imageUrl =
-  currentInput.googleDrive?.publicUrl;
+  console.log("\n6️⃣ LAARA");
+  console.log("--------------------------------");
 
-if (!imageUrl) {
-  throw new Error(
-    "Image Employee: Google Drive did not return a public image URL"
-  );
-}
+  currentInput = await runTrackedStep({
+    executionId,
+    userId,
 
-console.log("\n🌐 PUBLIC IMAGE URL:");
-console.log(imageUrl);
+    nodeId: "laara",
+    type: "laara",
 
-currentInput.imageUrl =
-  imageUrl;
+    input: currentInput,
 
-currentInput.url =
-  imageUrl;
+    execute: () =>
+      googleDriveOutputNode.execute({
+        input: currentInput,
 
-  currentInput =
-    await instagramNode.execute({
-      input: currentInput,
-
-      node: {
-        type: "instagram",
-
-        config: {
-          connectionId:
-            employee.connections
-              ?.instagramConnectionId,
+        node: {
+          type: "googleDriveOutput",
+          config: {},
         },
-      },
 
-      context,
-    });
+        context,
+      }),
+  });
+
+  console.log(
+    "✅ Laara output prepared"
+  );
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | STEP 7 — INSTAGRAM
+  |--------------------------------------------------------------------------
+  */
+
+  console.log("\n7️⃣ INSTAGRAM");
+  console.log("--------------------------------");
+
+  const imageUrl =
+    currentInput.googleDrive?.publicUrl;
+
+  if (!imageUrl) {
+    throw new Error(
+      "Image Employee: Google Drive did not return a public image URL"
+    );
+  }
+
+  console.log("\n🌐 PUBLIC IMAGE URL:");
+  console.log(imageUrl);
+
+  currentInput.imageUrl =
+    imageUrl;
+
+  currentInput.url =
+    imageUrl;
+
+
+  currentInput = await runTrackedStep({
+    executionId,
+    userId,
+
+    nodeId: "instagram",
+    type: "instagram",
+
+    input: currentInput,
+
+    execute: () =>
+      instagramNode.execute({
+        input: currentInput,
+
+        node: {
+          type: "instagram",
+
+          config: {
+            connectionId:
+              employee.connections
+                ?.instagramConnectionId,
+          },
+        },
+
+        context,
+      }),
+  });
 
   console.log(
     "✅ Instagram publishing completed"
   );
 
-  /* ============================================================
-     FINAL RESULT
-  ============================================================ */
 
-  console.log("\n");
+  /*
+  |--------------------------------------------------------------------------
+  | FINAL RESULT
+  |--------------------------------------------------------------------------
+  */
+
+  console.log("");
   console.log(
-    "############################################################"
+    "============================================================"
   );
 
   console.log(
@@ -374,81 +515,9 @@ currentInput.url =
   );
 
   console.log(
-    "############################################################"
-  );
-
-  console.log("\n📋 FINAL CONTENT");
-  console.log(
     "============================================================"
   );
 
-  console.log("\n👤 Employee:");
-  console.log(
-    employee.name
-  );
-
-  console.log("\n🎨 Image Prompt:");
-  console.log(
-    currentInput.imagePrompt ||
-      currentInput.promptGeneration?.prompt
-  );
-
-  console.log("\n📝 Caption:");
-  console.log(
-    currentInput.caption
-  );
-
-  console.log("\n#️⃣ Hashtags:");
-  console.log(
-    currentInput.hashtagsText ||
-  Array.isArray(currentInput.hashtags)
-  ? currentInput.hashtags.join(" ")
-  : currentInput.hashtags || "Hashtags not found"
-  );
-
-  console.log("\n🖼️ Generated File:");
-  console.log(
-    currentInput.generatedFile
-  );
-
-  console.log("\n📁 Local Path:");
-  console.log(
-    currentInput.generatedPath
-  );
-
-  console.log("\n☁️ Cloudinary URL:");
-  console.log(
-    currentInput.imageUrl
-  );
-
-  console.log("\n📱 Instagram Result:");
-
-  console.log(
-    JSON.stringify(
-      currentInput.instagramPublish ||
-        currentInput.instagram ||
-        currentInput.instagramResult ||
-        {},
-      null,
-      2
-    )
-  );
-
-  console.log(
-    "\n============================================================"
-  );
-
-  console.log(
-    "✅ IMAGE REEL EMPLOYEE DONE"
-  );
-
-  console.log(
-    "============================================================\n"
-  );
-
-  /* ============================================================
-     RETURN
-  ============================================================ */
 
   return {
     success: true,
@@ -462,6 +531,7 @@ currentInput.url =
     output: currentInput,
   };
 };
+
 
 module.exports = {
   runImageEmployee,
