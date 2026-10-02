@@ -5,7 +5,9 @@ const User = require("../models/User");
 const Account = require("../models/Account");
 
 const generateToken = require("../utils/generateToken");
-
+const {
+  sendPasswordResetEmail,
+} = require("../services/emailService");
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -691,28 +693,36 @@ const forgotPassword = async (
         .update(rawToken)
         .digest("hex");
 
-    user.resetPasswordToken =
-      hashedToken;
+user.resetPasswordToken = hashedToken;
+user.resetPasswordExpires = new Date(
+  Date.now() + 15 * 60 * 1000
+);
 
-    user.resetPasswordExpires =
-      new Date(
-        Date.now() +
-          15 * 60 * 1000
-      );
+await user.save();
 
-    await user.save();
+try {
+  await sendPasswordResetEmail({
+    to: user.email,
+    name: user.name,
+    token: rawToken,
+  });
+} catch (emailError) {
+  console.error(
+    "PASSWORD RESET EMAIL ERROR:",
+    emailError
+  );
 
-    /*
-     * TODO:
-     * Send rawToken through email service.
-     *
-     * Never send hashedToken.
-     */
+  // Email nahi gaya, to token ko invalid kar do
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
 
-    console.log(
-      "PASSWORD RESET TOKEN:",
-      rawToken
-    );
+  await user.save();
+
+  return res.status(500).json({
+    success: false,
+    message: "Unable to send password reset email",
+  });
+}
 
     return res.status(200).json({
       success: true,
@@ -837,7 +847,34 @@ const resetPassword = async (
     });
   }
 };
+// ============================================================
+// PASSWORD RESET LINK REDIRECT
+// ============================================================
 
+const resetPasswordLink = async (req, res) => {
+  try {
+    const {token} = req.query;
+
+    if (!token) {
+      return res.status(400).send("Invalid password reset link");
+    }
+
+    const appUrl =
+      `laara://reset-password` +
+      `?token=${encodeURIComponent(token)}`;
+
+    return res.redirect(appUrl);
+  } catch (error) {
+    console.error(
+      "RESET PASSWORD LINK ERROR:",
+      error
+    );
+
+    return res.status(500).send(
+      "Unable to open password reset link"
+    );
+  }
+};
 // ============================================================
 // EXPORT
 // ============================================================
@@ -848,4 +885,5 @@ module.exports = {
   getMe,
   forgotPassword,
   resetPassword,
+resetPasswordLink,
 };
