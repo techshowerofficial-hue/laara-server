@@ -10,8 +10,11 @@ const executionRoutes =
   require("./routes/executionRoutes");
   const authRoutes = require("./routes/authRoutes");
 const connectionRoutes = require("./routes/connectionRoutes.js");
+const masterDriveRoutes = require("./routes/masterDriveRoutes");
 const analyticsRoutes =
   require("./routes/analyticsRoutes");
+const studyRoutes =
+  require("./routes/studyRoutes");
 
 const app = express();
 
@@ -37,6 +40,7 @@ app.use(
   analyticsRoutes
 );
 app.use("/api/auth", authRoutes);
+app.use("/api/master-drive", masterDriveRoutes);
 app.use("/api/employees", employeeRoutes);
 app.get("/api/health", (req, res) => {
   res.json({
@@ -60,6 +64,10 @@ app.use(
 app.use(
   "/api/execution",
   executionRoutes
+);
+app.use(
+  "/api/study",
+  studyRoutes
 );
 
 module.exports = app;

@@ -114,22 +114,24 @@ const info = await transporter.sendMail({
               Laara account password.
             </p>
 
-            <div style="margin:28px 0;">
-              <a
-                href="${resetUrl}"
-                style="
-                  display:inline-block;
-                  padding:14px 24px;
-                  background:#111111;
-                  color:#ffffff;
-                  text-decoration:none;
-                  border-radius:8px;
-                  font-weight:bold;
-                "
-              >
-                Reset Password
-              </a>
-            </div>
+<div style="margin:28px 0;">
+  <a
+    href="${resetUrl}"
+    target="_blank"
+    style="
+      display:inline-block;
+      padding:14px 24px;
+      background:#111111;
+      color:#ffffff;
+      text-decoration:none;
+      border-radius:8px;
+      font-weight:bold;
+    "
+  >
+    Reset Password
+  </a>
+</div>
+
 
             <p
               style="
