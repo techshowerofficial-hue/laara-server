@@ -1,9 +1,38 @@
 const express = require("express");
-const { startStudy } = require("../controllers/studyController");
-const authMiddleware = require("../middleware/authMiddleware");
 
-const router = express.Router();
+const router =
+  express.Router();
 
-router.post("/start", authMiddleware, startStudy);
+const {
+  getAvailableSubjects,
+  startStudy,
+  openStudyPdf,
+} =
+  require("../controllers/studyController");
+
+const auth =
+  require("../middleware/authMiddleware");
+
+
+router.get(
+  "/subjects",
+  auth,
+  getAvailableSubjects
+);
+
+
+router.post(
+  "/start",
+  auth,
+  startStudy
+);
+
+
+router.get(
+  "/notes/:subject/:fileId",
+  auth,
+  openStudyPdf
+);
+
 
 module.exports = router;

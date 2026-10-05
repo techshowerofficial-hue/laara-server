@@ -28,7 +28,7 @@ app.get("/healthz", (req, res) => {
       () => {
 
         console.log(
-          `🚀 Server running on port ${PORT}`
+          `🚀 Server running on port http://10.199.153.238:${PORT}`
         );
 
         startEmployeeScheduler();

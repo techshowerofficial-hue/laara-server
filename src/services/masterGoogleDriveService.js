@@ -1,12 +1,8 @@
 const { google } = require("googleapis");
 
 const getMasterDriveClient = async () => {
-  const clientId =
-    process.env.GOOGLE_CLIENT_ID;
-
-  const clientSecret =
-    process.env.GOOGLE_CLIENT_SECRET;
-
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken =
     process.env.LAARA_MASTER_GOOGLE_REFRESH_TOKEN;
 
@@ -38,12 +34,10 @@ const getMasterDriveClient = async () => {
     refresh_token: refreshToken,
   });
 
-  const drive = google.drive({
+  return google.drive({
     version: "v3",
     auth: oauth2Client,
   });
-
-  return drive;
 };
 
 module.exports = {

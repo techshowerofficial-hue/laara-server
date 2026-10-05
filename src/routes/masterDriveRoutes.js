@@ -1,6 +1,8 @@
 const express = require("express");
 const { google } = require("googleapis");
-
+const {
+  getMasterDriveClient,
+} = require("../services/masterGoogleDriveService");
 const router = express.Router();
 
 const MASTER_REDIRECT_URI =
@@ -67,14 +69,6 @@ router.get("/callback", async (req, res) => {
     const { tokens } =
       await oauth2Client.getToken(code);
 
-    console.log(
-      "MASTER GOOGLE TOKENS RECEIVED"
-    );
-
-    console.log(
-      "Refresh token:",
-      tokens.refresh_token
-    );
 
     res.send(`
       <h2>Master Google Drive Connected ✅</h2>
@@ -92,5 +86,38 @@ router.get("/callback", async (req, res) => {
     );
   }
 });
+router.get("/test", async (req, res) => {
+  try {
+    const drive =
+      await getMasterDriveClient();
 
+    const response =
+      await drive.files.list({
+        pageSize: 10,
+        fields:
+          "files(id,name,mimeType,webViewLink)",
+        q: "trashed = false",
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Master Google Drive connected successfully",
+      files: response.data.files || [],
+    });
+  } catch (error) {
+    console.error(
+      "MASTER DRIVE TEST ERROR:",
+      error?.response?.data || error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Master Google Drive connection failed",
+      error:
+        error?.response?.data || error.message,
+    });
+  }
+});
 module.exports = router;
