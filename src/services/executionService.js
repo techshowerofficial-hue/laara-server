@@ -43,15 +43,14 @@ const startNodeExecution = async ({
         currentNodeId: nodeId
       },
 
-      $push: {
-        nodeResults: {
-          nodeId,
-          type,
-          status: "running",
-          input,
-          startedAt: new Date()
-        }
-      }
+$push: {
+  nodeResults: {
+    nodeId,
+    type,
+    status: "running",
+    startedAt: new Date()
+  }
+}
     },
    {
   returnDocument: "after"
@@ -77,12 +76,10 @@ const completeNodeExecution = async ({
       "nodeResults.nodeId": nodeId
     },
     {
-      $set: {
-        "nodeResults.$.status": "success",
-        "nodeResults.$.output": output,
-        "nodeResults.$.finishedAt":
-          new Date()
-      }
+   $set: {
+  "nodeResults.$.status": "success",
+  "nodeResults.$.finishedAt": new Date()
+}
     },
   {
   returnDocument: "after"
@@ -128,8 +125,7 @@ const failNodeExecution = async ({
 
 const completeExecution = async ({
   executionId,
-  userId,
-  finalOutput
+  userId
 }) => {
   return Execution.findOneAndUpdate(
     {
@@ -139,17 +135,15 @@ const completeExecution = async ({
     {
       $set: {
         status: "success",
-        finalOutput,
         currentNodeId: null,
         finishedAt: new Date()
       }
     },
- {
-  returnDocument: "after"
-}
+    {
+      returnDocument: "after"
+    }
   );
 };
-
 
 // ========================================
 // FAIL EXECUTION

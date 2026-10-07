@@ -11,6 +11,7 @@ const executionRoutes =
   const authRoutes = require("./routes/authRoutes");
 const connectionRoutes = require("./routes/connectionRoutes.js");
 const masterDriveRoutes = require("./routes/masterDriveRoutes");
+const paymentRoutes = require("./routes/paymentRoutes.js");
 const analyticsRoutes =
   require("./routes/analyticsRoutes");
 const studyRoutes =
@@ -40,6 +41,7 @@ app.use(
   analyticsRoutes
 );
 app.use("/api/auth", authRoutes);
+app.use("/api/payments", paymentRoutes);
 app.use("/api/master-drive", masterDriveRoutes);
 app.use("/api/employees", employeeRoutes);
 app.get("/api/health", (req, res) => {

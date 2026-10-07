@@ -1,7 +1,8 @@
 const Employee = require("../models/Employee");
 const Account = require("../models/Account");
 const EmployeeTrialUsage = require("../models/EmployeeTrialUsage");
-
+const { isTestAccount } = require("../utils/testAccount");
+const User = require("../models/User");
 const EMPLOYEE_TRIAL_DAYS = 2;
 const EMPLOYEE_TRIAL_MAX_OUTPUTS = 3;
 
@@ -400,7 +401,27 @@ const canEmployeeRun = async ({
       _id: employee.accountId,
       userId,
     });
+const testAccount = await isTestAccount(userId);
 
+const user = await User.findById(userId)
+  .select("accountType");
+
+const isVIP = user?.accountType === "VIP";
+
+const privilegedAccount = testAccount || isVIP;
+
+if (privilegedAccount) {
+  return {
+    allowed: true,
+    mode: isVIP ? "VIP" : "TEST",
+    employeeId: employee._id,
+    outputsUsed: Number(
+      employee.usage?.successfulOutputs || 0
+    ),
+    maxOutputs: Number.MAX_SAFE_INTEGER,
+    outputsRemaining: Number.MAX_SAFE_INTEGER,
+  };
+}
   if (!account) {
     return {
       allowed: false,
